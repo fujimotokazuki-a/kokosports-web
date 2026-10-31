@@ -1,0 +1,192 @@
+/* ココスポーツ 本番：お客様の画面（C00〜C90）の見た目
+   base.css の決まり（白地＋淡い青灰、紺は文字とボタン、水素だけ淡い水色、体操服の2本線、角丸 12/8/6）に足す分だけ */
+
+.cust{display:flex;flex-direction:column}
+.cust>.c-body{flex:1 0 auto;padding:16px 16px 28px;gap:16px}
+.cust .t2{color:var(--t2)}
+.cust .c-body>p.help,.cust .c-sec p.help{margin:0}
+.ico.lg{width:26px;height:26px;stroke-width:1.4}
+.ico.xl{width:40px;height:40px;stroke-width:1.2}
+
+/* 見出しの帯 */
+.c-hd .in{gap:8px}
+.c-back,.c-home,.c-tel{display:flex;align-items:center;gap:4px;color:var(--t2);font-size:13px;min-width:56px;height:44px}
+.c-home{justify-content:flex-end}
+.c-tel{justify-content:flex-end;color:var(--navy)}
+.c-ttl{flex:1;text-align:center;font-size:14px;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* 足もと */
+.c-foot{border-top:1px solid var(--line);background:var(--bg);padding:16px 16px 28px;font-size:12px;color:var(--t2)}
+.c-foot nav{display:flex;flex-wrap:wrap;gap:4px 14px;margin-bottom:8px}
+.c-foot nav a{color:var(--t1);text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--line2)}
+.c-foot p{margin:0;line-height:1.7}
+
+/* まとまり */
+.c-sec{display:flex;flex-direction:column;gap:8px}
+.c-sec h2{margin:0;font-size:13px;font-weight:500;color:var(--t2);letter-spacing:.06em}
+.c-lead{margin:0;font-size:14px;color:var(--t2)}
+.c-link{color:var(--sky);text-decoration:underline;text-underline-offset:3px;display:inline-flex;align-items:center;gap:3px}
+.c-pagehd{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.c-pagehd h1{margin:0;font-size:18px;font-weight:500;line-height:1.4}
+.c-pagehd .c-link{font-size:13px;white-space:nowrap}
+.c-mini{font-size:13px;color:var(--t2);border-bottom:1px solid var(--line);padding-bottom:8px}
+.c-center{text-align:center}
+.c-points{margin:0;padding-left:18px;font-size:13px;color:var(--t2);line-height:1.7}
+.c-rule{margin:0;font-size:13px;color:#334155;line-height:1.75}
+.c-addr{margin:0;font-size:14px}
+.cust .sumtable{background:none;border:0;border-radius:0;border-collapse:collapse;padding:0}
+.cust .sumtable tr:last-child td{border-bottom:1px solid var(--line)}
+.cust .sumtable td:last-child{word-break:break-word}
+
+/* C00 はじめの画面 */
+.c-intro{margin:-16px -16px 0;padding:22px 16px 18px;border-bottom:1px solid var(--line)}
+.c-intro.sky{background:var(--sky-weak)}
+.c-intro h1{font-size:22px;line-height:1.5;margin:4px 0 8px}
+.c-intro p{margin:0;font-size:13px;color:var(--t2)}
+.c-tasks{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden}
+.c-tasks a{display:grid;grid-template-columns:30px 1fr 16px;gap:12px;align-items:center;padding:14px 14px;border-bottom:1px solid var(--line)}
+.c-tasks a:last-child{border-bottom:0}
+.c-tasks a:active{background:var(--bg)}
+.c-tasks .ico.lg{stroke:var(--navy)}
+.c-tasks b{display:block;font-weight:500;font-size:16px;color:var(--navy);line-height:1.4}
+.c-tasks small{display:block;font-size:12px;color:var(--t2);line-height:1.5}
+.c-tasks a>.ico:last-child{color:var(--t3)}
+.c-sublink{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--navy);padding:2px 2px}
+.c-sublink .ico:last-child{margin-left:auto;color:var(--t3)}
+
+/* C01 */
+.c-lineguide{text-align:center;padding:12px 0 4px;color:var(--navy)}
+.c-lineguide h1{font-size:20px;line-height:1.5;margin:8px 0 12px}
+.c-lineguide ul{text-align:left;margin:0;padding-left:20px;font-size:14px;color:var(--t1);line-height:1.8}
+
+/* 学校・品物・予約の一覧 */
+.schools a{gap:10px}
+.schools a span{display:flex;align-items:center;gap:4px;white-space:nowrap}
+.schools a .ico{color:var(--t3)}
+.c-items{border-top:1px solid var(--line)}
+.c-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 2px;border-bottom:1px solid var(--line)}
+.c-item .n{font-size:15px;line-height:1.45;min-width:0}
+.c-item .n small{display:block;font-size:12px;color:var(--t2)}
+.c-item .r{display:flex;flex-direction:column;align-items:flex-end;gap:1px;white-space:nowrap;font-size:14px}
+.c-item .r .ico{color:var(--t3)}
+.c-items .c-item .r:has(.ico){flex-direction:row;align-items:center;gap:6px}
+.mk{font-size:12px;color:var(--t2)}
+.mk.low{color:var(--warn)}
+.mk.out{color:var(--t3)}
+.c-box{display:grid;grid-template-columns:30px 1fr;gap:10px;border:1px solid var(--line);border-radius:var(--r-lg);padding:12px 14px;background:var(--bg)}
+.c-box .ico.lg{stroke:var(--navy)}
+.c-box b{font-weight:500;font-size:15px;color:var(--navy)}
+.c-box p{margin:2px 0 8px;font-size:13px;color:var(--t2)}
+
+/* C12 品物とサイズ */
+.c-photo{height:200px;margin:-16px -16px 0;border-radius:0}
+.c-prod .sc{font-size:12px;color:var(--t2)}
+.c-prod h1{margin:2px 0 2px;font-size:19px;font-weight:500;line-height:1.45}
+.c-prod .pr{font-size:17px}
+.c-prod .pr small{font-size:12px;color:var(--t2);margin-left:2px}
+.c-prod .help{margin:4px 0 0}
+.c-sizes button{min-width:60px;height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.2;color:var(--t1)}
+.c-sizes button small{font-size:10px;color:var(--t2);margin-top:2px}
+.c-sizes button.low small{color:var(--warn)}
+.c-sizes button.out{background:var(--band);border-color:var(--band);color:var(--t3)}
+.c-sizes button.out small{color:var(--t3)}
+.c-sizes button.sel,.c-sizes button.sel small{background:var(--navy);border-color:var(--navy);color:#fff}
+/* サイズで価格が違う品：ボタンに表示名・価格・在庫の3段 */
+.c-sizes.priced{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr))}
+.c-sizes.priced button{height:auto;min-height:62px;padding:6px 4px}
+.c-sizes button em{font-style:normal;font-size:12px;color:var(--t2);margin-top:2px}
+.c-sizes button.out em{color:var(--t3)}
+.c-sizes button.sel em{color:#fff}
+/* 体操服のお買い上げプレゼントの案内（C11） */
+.c-gift{margin:0 0 12px}
+.c-gift .ico.lg{stroke:var(--navy)}
+.c-gift ul{margin:4px 0 0;padding:0;list-style:none;font-size:13px;color:var(--t2);line-height:1.6}
+.c-gift li+li{margin-top:2px}
+.c-state{font-size:14px}
+.c-qtyrow{display:flex;align-items:center;gap:12px;font-size:14px;color:var(--t2)}
+.qty{display:inline-flex;align-items:center;border:1px solid var(--line2);border-radius:var(--r-sm);overflow:hidden;background:#fff}
+.qty button{width:36px;height:34px;border:0;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--navy)}
+.qty button[disabled]{color:var(--line2);cursor:default}
+.qty span{min-width:30px;text-align:center;font-size:15px;font-variant-numeric:tabular-nums;border-left:1px solid var(--line);border-right:1px solid var(--line);line-height:34px}
+.c-guide{border:1px solid var(--line);border-radius:var(--r);padding:8px 12px;font-size:13px}
+.c-guide summary{cursor:pointer;color:var(--t1)}
+.c-guide table{margin-top:6px}
+.c-guide td:first-child{width:30%}
+.c-guide .help{margin:6px 0 0}
+.c-cartlink{display:flex;align-items:center;gap:8px;font-size:14px;border-top:1px solid var(--line);padding-top:12px}
+.c-cartlink span{margin-left:auto;color:var(--sky);display:flex;align-items:center}
+
+/* C13 かご */
+.c-timer{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:#334155;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:9px 12px}
+.c-timer .ico{margin-top:3px;color:var(--t2)}
+.c-timer b{font-weight:500;font-variant-numeric:tabular-nums;color:var(--t1)}
+.c-lines{border-top:1px solid var(--line)}
+.c-line{display:flex;justify-content:space-between;gap:10px;padding:12px 2px;border-bottom:1px solid var(--line)}
+.c-line .n{font-size:15px;line-height:1.45;min-width:0}
+.c-line .n small{display:block;font-size:12px;color:var(--t2)}
+.c-line .r{display:flex;flex-direction:column;align-items:flex-end;gap:6px;white-space:nowrap}
+.c-line .r b{font-weight:500}
+.c-empty{min-height:150px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--t2);text-align:center;font-size:14px}
+.c-empty .ico{color:var(--t3)}
+.c-empty p{margin:0}
+
+/* C14 受け取りの日 */
+.c-days{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}
+.c-days .wd{font-size:11px;color:var(--t3);padding:2px 0}
+.c-days .wd.sat{color:var(--sky)}
+.c-days .wd.sun{color:var(--ng)}
+.c-days button{height:40px;border:1px solid var(--line2);border-radius:var(--r-sm);background:#fff;cursor:pointer;font-size:13px;color:var(--t1);padding:0;font-variant-numeric:tabular-nums}
+.c-days button.sel{background:var(--navy);border-color:var(--navy);color:#fff}
+.c-days .off{height:40px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--t3);background:var(--band);border-radius:var(--r-sm);line-height:1.2}
+.c-days .off small{font-size:10px}
+.choice{margin:0}
+.choice[disabled]{opacity:.5;cursor:default}
+
+/* C16・C17 */
+.c-amount{font-size:26px;font-weight:500;color:var(--navy);font-variant-numeric:tabular-nums}
+.c-done{text-align:center;padding:8px 0 2px;color:var(--navy)}
+.c-done h1{font-size:20px;line-height:1.5;margin:6px 0 8px}
+.c-done .no{display:inline-flex;flex-direction:column;border:1px solid var(--line2);border-radius:var(--r);padding:6px 18px;font-size:20px;letter-spacing:.06em;color:var(--t1);font-variant-numeric:tabular-nums}
+.c-done .no small{font-size:11px;color:var(--t2);letter-spacing:0}
+.c-done .help{margin:0}
+
+/* C25 採寸の枠 */
+.c-mslots{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.c-mslots button{height:52px;border:1px solid var(--line2);border-radius:var(--r-sm);background:#fff;cursor:pointer;font-size:14px;color:var(--t1);display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.3;font-variant-numeric:tabular-nums}
+.c-mslots button small{font-size:10px;color:var(--t2)}
+.c-mslots button[disabled]{background:var(--band);border-color:var(--band);color:var(--t3);cursor:default}
+
+/* C30・C31 水素サロン */
+.c-menus{display:flex;flex-direction:column;gap:8px}
+.menu[disabled]{opacity:.55;cursor:default}
+.menu .p{font-variant-numeric:tabular-nums}
+.c-weekwrap{overflow-x:auto;margin:0 -4px;padding:0 4px}
+.c-week{min-width:320px}
+.c-week .h{line-height:1.3}
+.c-week .h.sun{color:var(--ng)}
+.c-week .h.tm{text-align:right;padding-right:4px;font-variant-numeric:tabular-nums;align-self:center}
+.wk span{font-size:13px}
+.wk button{display:inline-flex;align-items:center;gap:2px;font-size:12px}
+.wk button[disabled]{opacity:.4;cursor:default}
+
+/* C41・C50・C60・C90 */
+.btn.c-danger{color:var(--ng);border-color:#fecaca}
+.c-stars button{color:var(--line2);font-size:0;padding:4px}
+.c-stars .ico{width:36px;height:36px;stroke-width:1.2}
+.c-stars button.on{color:var(--navy)}
+.c-stars button.on .ico{fill:var(--navy)}
+.c-toc{display:flex;flex-direction:column;gap:2px;font-size:13px}
+.c-toc a{color:var(--sky);text-decoration:underline;text-underline-offset:3px}
+.c-trouble{padding:20px 0 4px}
+.c-trouble h1{margin:0 0 6px;font-size:20px;font-weight:500;color:var(--t1)}
+.c-trouble p{margin:0;font-size:14px;color:var(--t2)}
+
+/* 下の帯（スマホの幅でも2つが並ぶように） */
+.cust .actionbar{padding:10px 16px calc(10px + env(safe-area-inset-bottom))}
+.cust .actionbar .btn{flex:0 0 auto}
+.cust .actionbar .s{min-width:0}
+@media (max-width:380px){
+  .cust .actionbar .btn{padding:0 14px;font-size:14px}
+  .c-sizes button{min-width:54px}
+}
+.cust .sumtable b,.cust .c-item b{font-weight:500}
