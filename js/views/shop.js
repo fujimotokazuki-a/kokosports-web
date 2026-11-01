@@ -563,7 +563,7 @@ KS.views.s = (function () {
     ['cart', 'holdMin', 'かごに入れた品を押さえる時間', '分'], ['cart', 'lowStock', '「残りわずか」と見せる数', '個以下'], ['restock', 'priorityHours', '入荷のお知らせのあと優先する時間', '時間'],
     ['payment', 'deadlineMin', 'ネットの支払いを待つ時間', '分'], ['salon', 'deadlineMin', 'サロン：ネットの受付の締め切り', '分前'], ['salon', 'cancelMin', 'サロン：ネットで取り消せるのは', '分前まで'],
     ['salon', 'horizonDays', 'サロン：何日先まで受け付けるか', '日'], ['line', 'monthlyQuota', 'LINEの月の無料通数', '通'], ['line', 'stopReminderUnder', '前日のお知らせを止める残り', '通を切ったら']];
-  var STAGES = [['order', '体操服などの取り置き'], ['measure', '採寸の予約'], ['ship', '配送'], ['prepay', 'ネットで先に払う'], ['salon', '水素サロンの予約'], ['voice', 'お客様の声（来店のあとに聞く）']];
+  var STAGES = [['price', '体操服の料金表（取り置きを始める前でも見せる）'], ['order', '体操服などの取り置き（在庫の表示・かご・入荷のお知らせ）'], ['measure', '採寸の予約'], ['ship', '配送'], ['prepay', 'ネットで先に払う'], ['salon', '水素サロンの予約'], ['voice', 'お客様の声（来店のあとに聞く）']];
   var WD = ['日', '月', '火', '水', '木', '金', '土'];
   var ROLE = { owner: 'オーナー', admin: '管理（本人）', staff: '店の人' };
 

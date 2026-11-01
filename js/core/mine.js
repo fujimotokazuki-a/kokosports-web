@@ -6,7 +6,7 @@ KS.core.mine = (function () {
   function boot(ctx) {
     var cf = c.cfg(ctx), me = c.meLine(ctx);
     return {
-      ok: true, inLine: !!me, shop: cf.shop, stages: cf.stages, openDays: cf.openDays, open: cf.open, close: cf.close,
+      ok: true, inLine: !!me, shop: cf.shop, stages: cf.stages, opening: cf.opening, openDays: cf.openDays, open: cf.open, close: cf.close,
       today: ctx.now().date, now: ctx.now(), legal: cf.legal, heard: KS.core.model.HEARD, sampleData: !!cf.sampleData,
       profile: me ? { name: me.name, kana: me.kana, phone: me.phone, email: me.email, schoolId: me.schoolId, lineName: me.lineName } : null,
       holidays: ctx.db.all('holidays').filter(function (h) { return h.date >= ctx.now().date; }).slice(0, 10)

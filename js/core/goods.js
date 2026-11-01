@@ -34,9 +34,9 @@ KS.core.goods = (function () {
     var s = c.school(ctx, args.schoolId); if (!s || s.visible === false) return u.fail('学校が見つかりません。', 'notfound');
     var me = c.meLine(ctx);
     if (me && me.schoolId !== s.id) ctx.db.update('customers', me.id, { schoolId: s.id });
-    var items = ctx.db.all('products').filter(function (p) { return p.visible && (p.schoolId === s.id || p.schoolId === ''); })
+    var items = ctx.db.all('products').filter(function (p) { return p.visible && (p.schoolId === s.id || (p.schoolId === '' && (!p.forKind || p.forKind === s.kind))); })
       .sort(u.by('sort')).map(function (p) { return summary(ctx, p); });
-    return { ok: true, school: s, items: items, measureOpen: !!c.cfg(ctx).stages.measure && s.measure, campaign: campaignFor(ctx, s.id) };
+    return { ok: true, school: s, items: items, measureOpen: !!c.cfg(ctx).stages.measure && s.measure, campaign: campaignFor(ctx, s.id), orderOpen: orderOpen(ctx) };
   }
   /* 体操服のお買い上げプレゼントの案内（設定 campaign）。有効で、その学校が対象のときだけ */
   function campaignFor(ctx, schoolId) {
@@ -45,27 +45,30 @@ KS.core.goods = (function () {
     if (cp.schoolIds && cp.schoolIds.length && cp.schoolIds.indexOf(schoolId) < 0) return null;
     return { title: cp.title || '', text: cp.text };
   }
+  /* 取り置きを始めているか。始める前（料金表だけ）は、在庫のありなしも出さない */
+  function orderOpen(ctx) { return !!c.cfg(ctx).stages.order; }
   function summary(ctx, p) {
-    var marks = p.sizes.map(function (z) { return mark(ctx, freeQty(ctx, p.id, z)); });
+    var open = orderOpen(ctx);
+    var marks = p.sizes.map(function (z) { return open ? mark(ctx, freeQty(ctx, p.id, z)) : ''; });
     var any = marks.some(function (m) { return m !== '品切れ'; }), pr = c.priceRange(p);
     /* price は最低価格。priceFrom が true なら「2,300円〜」と出す */
     return {
       id: p.id, cat: p.cat, name: p.name, price: pr.min, priceMax: pr.max, priceFrom: pr.varies, priceTentative: !!p.priceTentative, needsMeasure: !!p.needsMeasure,
-      required: p.required, photo: p.photo, note: p.note, state: p.needsMeasure ? '採寸' : (any ? (marks.indexOf('あり') >= 0 ? 'あり' : '残りわずか') : '品切れ')
+      required: p.required, photo: p.photo, note: p.note, state: p.needsMeasure ? '採寸' : !open ? '' : (any ? (marks.indexOf('あり') >= 0 ? 'あり' : '残りわずか') : '品切れ')
     };
   }
 
   /* --- C12 品物とサイズ --- */
   function item(ctx, args) {
     var p = c.product(ctx, args.productId); if (!p || !p.visible) return u.fail('この品物は今は扱っていません。', 'notfound');
-    var me = c.meLine(ctx), key = ownerKey(ctx, args.cartId || '');
-    var myWaits = me ? ctx.db.all('waits').filter(function (w) { return w.customerId === me.id && w.productId === p.id && (w.status === '待ち' || w.status === 'お知らせ済み'); }) : [];
+    var me = c.meLine(ctx), key = ownerKey(ctx, args.cartId || ''), open = orderOpen(ctx);
+    var myWaits = me && open ? ctx.db.all('waits').filter(function (w) { return w.customerId === me.id && w.productId === p.id && (w.status === '待ち' || w.status === 'お知らせ済み'); }) : [];
     var sizes = p.sizes.map(function (z) {
       var mine = myWaits.filter(function (w) { return w.size === z; })[0];
-      return { size: z, label: c.sizeLabel(p, z), price: c.priceOf(p, z), state: mark(ctx, freeQty(ctx, p.id, z, key)), waiting: !!mine, waitStatus: mine ? mine.status : '' };
+      return { size: z, label: c.sizeLabel(p, z), price: c.priceOf(p, z), state: open ? mark(ctx, freeQty(ctx, p.id, z, key)) : '', waiting: !!mine, waitStatus: mine ? mine.status : '' };
     });
     var pr = c.priceRange(p);
-    return { ok: true, product: p, school: p.schoolId ? c.school(ctx, p.schoolId) : null, sizes: sizes, priceMin: pr.min, priceMax: pr.max, priceFrom: pr.varies };
+    return { ok: true, product: p, school: p.schoolId ? c.school(ctx, p.schoolId) : null, sizes: sizes, priceMin: pr.min, priceMax: pr.max, priceFrom: pr.varies, orderOpen: open };
   }
 
   /* --- C13 かご（30分だけ在庫を押さえる） --- */

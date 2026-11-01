@@ -1,6 +1,6 @@
 /* ココスポーツ 本番：表の形と、最初に入れておく値
    - 表の正本は、店のGoogleアカウントのスプレッドシート（試しの形ではブラウザの中）
-   - 小学校4校の品物と価格は、お店の価格表（2026-11-01）どおり。中学校と反射タスキは「仮」で、届いたら S08 設定 で入れ替える
+   - 小学校4校の品物と価格は、お店の価格表（2026-11-01）どおり。中学校・反射タスキ・帽子・上履きは「仮」で、届いたら S08 設定 で入れ替える
    - 在庫は S05 在庫 で入れる */
 KS.core.model = (function () {
   /* 表の名前と、主キー。Apps Script では同じ名前のシートになる */
@@ -23,8 +23,15 @@ KS.core.model = (function () {
       },
       /* 営業日：0=日〜6=土。木・日は休み */
       openDays: [1, 2, 3, 5, 6], open: 600, close: 1080,
-      /* 作った段階のうち、お客様に見せるもの（画面遷移 v02 第5章） */
-      stages: { order: true, measure: true, ship: true, prepay: true, salon: true, voice: true },
+      /* 作った段階のうち、お客様に見せるもの（画面遷移 v02 第5章）。
+         price は料金表（学校・品物・サイズと価格）だけを見せる。order が外れていれば、在庫・かご・取り置き・入荷のお知らせは出さない */
+      stages: { price: true, order: true, measure: true, ship: true, prepay: true, salon: true, voice: true },
+      /* まだ始めていない受付の案内（お客様の画面に出す） */
+      opening: {
+        order: '在庫の確認とお取り置きは、年明けから始まります。お買い求めは2月からの予定です。',
+        orderShort: '年明けから受付',
+        soon: 'ネットでの受付は、近日公開です。お急ぎの方はお電話でお問い合わせください。'
+      },
       cart: { holdMin: 30, lowStock: 2 },
       pickup: { fromDays: 1, toDays: 21, keepDays: 7 },
       restock: { priorityHours: 24 },
@@ -118,7 +125,7 @@ KS.core.model = (function () {
         id: 'P' + (n < 10 ? '0' : '') + n, schoolId: schoolId, cat: cat, name: name, sizes: sizes, price: price,
         sizePrices: opts.sizePrices || null, sizeLabels: opts.sizeLabels ? JSON.parse(JSON.stringify(opts.sizeLabels)) : null,
         priceTentative: opts.tentative !== false, needsMeasure: !!opts.measure, required: opts.required !== false,
-        sizeGuide: opts.guide || '', note: opts.note || '', photo: '', visible: true, sort: n
+        sizeGuide: opts.guide || '', note: opts.note || '', photo: '', visible: true, sort: n, forKind: opts.forKind || ''
       });
     }
     ['kamisu2', 'kamisu4'].forEach(function (s) {
@@ -141,6 +148,10 @@ KS.core.model = (function () {
       if (s === 'onoharanishi') add(s, 'シューズ', '体育館シューズ', SHOES, 2970, { tentative: false, note: '0.5cm刻みのサイズは店頭でお試しください' });
     });
     add('', 'その他', '反射タスキ', ['フリー'], 1500, { required: false, note: '通学・部活に' });
+    /* 小学校の共通の品（2026-11-01 追加）。価格・サイズはお店に確認中なので仮。forKind で小学校だけに出す */
+    add('', '帽子', '赤白帽子', ['フリー'], 0, { forKind: '小' });
+    add('', '帽子', '黄色帽子', ['フリー'], 0, { forKind: '小' });
+    add('', 'シューズ', '上履き', SHOES, 0, { forKind: '小', note: '0.5cm刻みのサイズは店頭でお試しください' });
     return out;
   }
 
