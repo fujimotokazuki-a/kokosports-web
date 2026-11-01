@@ -149,7 +149,7 @@ KS.views.c = (function () {
     var s = b.shop, st = b.stages, last = lastSchool();
     var tasks = [
       ['#/c/school' + (last ? '/' + seg(last) : ''), 'shirt', st.order ? '体操服・制服' : rsvNames(b) ? '体操服の料金表・ご予約' : '体操服の料金表', st.order ? '学校を選んで、サイズと在庫を見る・取り置き' : rsvNames(b) ? '学校を選んで価格を見る。' + rsvNames(b) + 'はご予約を受付中' : st.price ? '学校を選んで、品物とサイズごとの価格を見る' : '近日公開'],
-      ['#/c/salon', 'drop', '水素サロン', st.salon ? '完全個室・2席。空いている時間を見て予約' : 'ネットのご予約は近日公開'],
+      ['#/c/salon', 'drop', '水素サロン', st.salon || s.airReserve ? '完全個室・2席。空いている時間を見て予約' : 'ご予約はお電話で'],
       ['#/c/my', 'list', 'わたしの予約', st.order || st.salon || st.measure || st.reserve ? 'ご予約の確認と取り消し' : '近日公開']
     ];
     var hol = (b.holidays || []).filter(function (h) { return h.date <= u.addDays(b.today, 30); });
@@ -701,18 +701,35 @@ KS.views.c = (function () {
         body += '<div class="notice">' + (res.slots.length ? 'いまご予約できる日程は、すべて埋まっています。' : 'いまご予約できる日程はありません。') + '日程が増えたらお知らせします。お急ぎの方はお電話でご相談ください。</div>' + telBtn();
         return page({ back: bk, title: ttl, body: body });
       }
-      body += (res.fit ? '<p class="c-lead">お店で体操服を試着して、サイズを決められます。試着の時間は30分です。ご都合の良い時間を選んでください。</p>' +
+      /* 日を選んでから、その日の時間を出す（選んだ日はこの端末に覚えておく） */
+      var freeDay = function (d) { return days[d].some(function (s) { return s.left > 0; }); };
+      var sel = dr('mday')[res.school.id];
+      if (!sel || !days[sel]) sel = order.filter(freeDay)[0] || order[0];
+      body += (res.fit ? '<p class="c-lead">お店で体操服を試着して、サイズを決められます。試着の時間は30分です。日にちを選んでから、時間を選んでください。</p>' +
           '<ul class="c-points"><li>試着のあと、そのままお店でご予約いただけます。</li><li>' + esc(res.handText) + '</li><li>ご兄弟は、人数をまとめて1つの枠でご予約できます。</li></ul>'
-        : '<p class="c-lead">ご都合の良い時間を選んでください。ご兄弟は、人数をまとめて1つの枠でご予約できます。</p>') +
-        order.map(function (d) {
-          return sec(u.jpDate(d), '<div class="c-mslots">' + days[d].map(function (s) {
-            var full = s.left <= 0;
-            return '<button type="button" ' + (full ? 'disabled' : 'data-act="cMeasurePick" data-id="' + esc(s.id) + '" data-date="' + s.date + '" data-start="' + s.start + '" data-end="' + s.end + '" data-school="' + esc(res.school.id) + '" data-name="' + esc(res.school.name) + '"') + '>' +
-              u.hm(s.start) + '〜' + u.hm(s.end) + '<small>' + (full ? '満' : s.mark === '△' ? '残りわずか' : '空きあり') + '</small></button>';
-          }).join('') + '</div>');
-        }).join('') + '<p class="legend">満：その時間は埋まっています</p>';
+        : '<p class="c-lead">日にちを選んでから、ご都合の良い時間を選んでください。ご兄弟は、人数をまとめて1つの枠でご予約できます。</p>') +
+        mdayGrid(res.school.id, order, days) + sec(u.jpDate(sel), '<div class="c-mslots">' + days[sel].map(function (s) {
+          var full = s.left <= 0;
+          return '<button type="button" ' + (full ? 'disabled' : 'data-act="cMeasurePick" data-id="' + esc(s.id) + '" data-date="' + s.date + '" data-start="' + s.start + '" data-end="' + s.end + '" data-school="' + esc(res.school.id) + '" data-name="' + esc(res.school.name) + '"') + '>' +
+            u.hm(s.start) + '〜' + u.hm(s.end) + '<small>' + (full ? '満' : s.mark === '△' ? '残りわずか' : '空きあり') + '</small></button>';
+        }).join('') + '</div>') + '<p class="legend">満：その時間は埋まっています。休：お店の休みの日です</p>';
       return page({ back: bk, title: ttl, body: body });
     });
+  }
+
+  /* 採寸・試着の日にちの表（曜日をそろえた7列）。空きのある日だけ押せる */
+  function mdayGrid(sid, order, days) {
+    var sel = dr('mday')[sid], first = order[0], last = order[order.length - 1], has = {};
+    order.forEach(function (d) { has[d] = days[d].some(function (s) { return s.left > 0; }) ? 1 : 2; });
+    if (!sel || !has[sel] || has[sel] === 2) sel = order.filter(function (d) { return has[d] === 1; })[0] || first;
+    var cells = ['日', '月', '火', '水', '木', '金', '土'].map(function (w, i) { return '<span class="wd' + (i === 0 ? ' sun' : i === 6 ? ' sat' : '') + '">' + w + '</span>'; }).join('');
+    for (var i = 0; i < u.wd(first); i++) cells += '<span></span>';
+    for (var d = first; d <= last; d = u.addDays(d, 1)) {
+      var dt = u.parse(d), lab = (dt.getMonth() + 1) + '/' + dt.getDate();
+      cells += has[d] === 1 ? '<button type="button" class="' + (sel === d ? 'sel' : '') + '" data-act="cSet" data-s="mday" data-k="' + esc(sid) + '" data-v="' + d + '" aria-label="' + esc(u.jpDate(d)) + '">' + lab + '</button>'
+        : '<span class="off">' + lab + '<small>' + (has[d] === 2 ? '満' : '休') + '</small></span>';
+    }
+    return sec('日にち', '<div class="c-days">' + cells + '</div>');
   }
 
   /* ================= C26 採寸：人数・お子さまの名前・連絡先・確認 ================= */
@@ -773,9 +790,14 @@ KS.views.c = (function () {
       return page({ back: '#/c', title: '水素サロン', steps: steps(SALON_STEPS, 1), body: body });
     });
   }
-  /* このしくみのサロン予約を出す前。いままでの予約の画面（Airリザーブ）があれば、そこへの道は残す */
+  /* このしくみのサロン予約を出す前は、これまでの予約の画面（Airリザーブ）で受け付ける（2026-11-01 本人） */
   function salonClosed(url) {
-    return soonPage('#/c', '水素サロン', url ? '<p class="help">いまのご予約は、これまでの予約の画面で受け付けています。</p><a class="btn block" href="' + esc(url) + '" target="_blank" rel="noopener">' + ico('cal') + 'これまでの予約の画面を開く</a>' : '');
+    return page({
+      back: '#/c', title: '水素サロン', body: '<section class="c-intro sky"><div class="en">HYDROGEN SALON</div><h1 class="mincho">完全個室・2席の水素サロン</h1>' +
+        '<p>お買い物のついでに、静かな個室でひと休み。おひとりでも、お二人同時でもご利用いただけます。</p></section>' +
+        (url ? '<p class="c-lead">空いている時間を見て、ご予約の画面からお選びください。</p><a class="btn pri block" href="' + esc(url) + '" target="_blank" rel="noopener">' + ico('cal') + '空いている時間を見て予約する</a>'
+          : '<div class="notice">ご予約はお電話で承ります。</div>') + telBtn()
+    });
   }
 
   /* ================= C31 水素サロン：日時（週の表） ================= */
