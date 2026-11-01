@@ -29,6 +29,8 @@ KS.views.c = (function () {
   function cur() { var h = location.hash.split('?')[0]; try { return decodeURIComponent(h); } catch (e) { return h; } }
   function seg(x) { return encodeURIComponent(x); }
   function go(path) { KS.app.go(path); return false; }
+  /* 受付完了（C17）へは、確認の画面を置き換えて進む（端末の戻るで確認に戻って二重に申し込まないように） */
+  function done(path) { KS.app.replace(path); return false; }
   function setFlash(path, kind, text) { flash = { hash: '#/' + decodeURIComponent(path.split('?')[0]), kind: kind, text: text }; }
   function shop() { return (B && B.shop) || { tel: TEL0, name: 'ココスポーツ', address: '', hours: '10:00〜18:00', closedText: '木曜・日曜は定休' }; }
   function telHref() { return 'tel:' + String(shop().tel || TEL0).replace(/[^0-9]/g, ''); }
@@ -48,12 +50,15 @@ KS.views.c = (function () {
   }
 
   /* ================= 枠（見出し・下の帯・足もと） ================= */
-  function head(back, title) {
+  /* 戻る：back はその画面の親（アプリの中にひとつ前の画面が無いときの行き先）。
+     ひとつ前の画面があれば history.back()（app.js の back）。up が付いた画面（受付完了・支払い）は、
+     かごや確認に戻さないため、いつも親へ進む */
+  function head(back, title, up) {
     if (!back) {
       return '<header class="c-hd"><div class="in"><a class="c-logo" href="#/c"><small>神栖市の制服・体操服と水素サロン</small><b>ココスポーツ</b></a>' +
         '<a class="c-tel" href="' + telHref() + '">' + ico('tel') + '電話</a></div><div class="lines"></div></header>';
     }
-    return '<header class="c-hd"><div class="in"><a class="c-back" href="' + back + '">' + ico('back') + '戻る</a><span class="c-ttl">' + esc(title || '') + '</span>' +
+    return '<header class="c-hd"><div class="in"><a class="c-back" href="' + esc(back) + '"' + (up ? '' : ' data-act="cBack" data-to="' + esc(back) + '"') + '>' + ico('back') + '戻る</a><span class="c-ttl">' + esc(title || '') + '</span>' +
       '<a class="c-home" href="#/c" aria-label="はじめの画面へ">' + ico('home') + '</a></div><div class="lines"></div></header>';
   }
   function foot() {
@@ -64,7 +69,7 @@ KS.views.c = (function () {
   function flashHtml() { return flash && flash.hash === cur() ? '<div class="notice ' + flash.kind + '">' + esc(flash.text) + '</div>' : ''; }
   function steps(list, n) { return '<div class="steps">' + list.map(function (x, i) { return '<span class="' + (i < n ? 'on' : '') + '">' + (i + 1) + ' ' + esc(x) + '</span>'; }).join('') + '</div>'; }
   function page(o) {
-    return head(o.back, o.title) + '<div class="c-body">' + (o.steps || '') + flashHtml() + o.body + '</div>' + foot() +
+    return head(o.back, o.title, o.up) + '<div class="c-body">' + (o.steps || '') + flashHtml() + o.body + '</div>' + foot() +
       (o.bar ? '<div class="actionbar">' + o.bar + '</div>' : '');
   }
   function sec(title, inner, cls) { return '<section class="c-sec' + (cls ? ' ' + cls : '') + '">' + (title ? '<h2>' + esc(title) + '</h2>' : '') + inner + '</section>'; }
@@ -167,7 +172,7 @@ KS.views.c = (function () {
       if (!res.ok) return bad(res);
       var last = res.lastSchoolId || ui.keep('school') || '';
       var known = res.schools.filter(function (s) { return s.id === last; })[0];
-      if (known && p.pick !== '1') { location.replace('#/c/school/' + seg(last)); return ui.loading(); }
+      if (known && p.pick !== '1') { KS.app.replace('#/c/school/' + seg(last)); return ui.loading(); }
       var row = function (s) { return '<a href="#/c/school/' + seg(s.id) + '">' + esc(s.name) + '<span>' + (s.kind === '中' ? '制服・体操服' : '体操服') + ico('next') + '</span></a>'; };
       var body = '<p class="c-lead">お子さまの学校を選んでください。その学校で使う品と、サイズごとの在庫が見られます。</p>' +
         (known ? '<div class="schools"><div class="g">前に選んだ学校</div>' + row(known) + '</div>' : '') +
@@ -212,7 +217,7 @@ KS.views.c = (function () {
             '<p class="help">価格は税込みです。「〜」はサイズによって価格が変わる品です。「残りわずか」「品切れ」はネットと店頭を合わせた在庫です。</p>'
           : '<div class="notice">この学校の品物は準備中です。お電話でお問い合わせください。</div>' + telBtn() + '<a class="btn block" href="#/c/school?pick=1">扱っている学校を見る</a>');
       var bar = cr.ok && cr.count ? '<div class="s">かごに ' + cr.count + '点<br>' + yen(cr.goods) + '</div><a class="btn pri" href="#/c/cart">' + ico('bag') + 'かごを見る</a>' : '';
-      return page({ back: '#/c', title: s.short, body: body, bar: bar });
+      return page({ back: '#/c/school?pick=1', title: s.short, body: body, bar: bar });
     });
   }
 
@@ -350,7 +355,7 @@ KS.views.c = (function () {
     if (!b.stages.order) return closedPage('#/c', '受け取り方', 'ネットでの取り置きは準備中です。お電話でお問い合わせください。');
     return call('checkoutInfo', { cartId: cartId() }).then(function (res) {
       if (!res.ok) return bad(res);
-      if (!res.cart.lines.length) { setFlash('c/cart', 'warn', 'かごが空になっています。品物を選び直してください。'); location.replace('#/c/cart'); return ui.loading(); }
+      if (!res.cart.lines.length) { setFlash('c/cart', 'warn', 'かごが空になっています。品物を選び直してください。'); KS.app.replace('#/c/cart'); return ui.loading(); }
       var co = prepCo(res), e = errs.co || {}, inLine = res.profile.inLine, cnt = res.cart.count;
       nextFormKey = 'co';
       var how = choice('co', 'method', '店頭', co.method, 'お店で受け取る', '営業日のお好きな日に。取り置きは受け取り日から' + res.keepDays + '日間です。') +
@@ -390,9 +395,9 @@ KS.views.c = (function () {
   function c15(r, p, b) {
     return call('checkoutInfo', { cartId: cartId() }).then(function (res) {
       if (!res.ok) return bad(res);
-      if (!res.cart.lines.length) { setFlash('c/cart', 'warn', 'かごが空になっています。品物を選び直してください。'); location.replace('#/c/cart'); return ui.loading(); }
+      if (!res.cart.lines.length) { setFlash('c/cart', 'warn', 'かごが空になっています。品物を選び直してください。'); KS.app.replace('#/c/cart'); return ui.loading(); }
       var co = prepCo(res), inLine = res.profile.inLine;
-      if (Object.keys(checkCo(co, inLine, res.cart.count, res.ship)).length) { location.replace('#/c/checkout'); return ui.loading(); }
+      if (Object.keys(checkCo(co, inLine, res.cart.count, res.ship)).length) { KS.app.replace('#/c/checkout'); return ui.loading(); }
       nextFormKey = 'co';
       var ship = co.method === '配送' ? res.ship.methods.filter(function (m) { return m.id === co.shipMethod; })[0] : null;
       var fee = ship ? ship.fee : 0, prepay = co.method === '配送' || co.pay === '事前';
@@ -429,7 +434,7 @@ KS.views.c = (function () {
     return call('orderDone', { token: token }).then(function (res) {
       if (!res.ok) return bad(res);
       var o = res.order;
-      if (o.payStatus !== '支払い待ち') { location.replace('#/c/done/order/' + seg(token)); return ui.loading(); }
+      if (o.payStatus !== '支払い待ち') { KS.app.replace('#/c/done/order/' + seg(token)); return ui.loading(); }
       var body = '<div class="paybox"><div class="t2">' + esc(shop().name) + ' へのお支払い</div><div class="c-amount">' + yen(o.total) + '</div>' +
         kv([['受付番号', esc(o.id)], ['品物', o.lines.map(function (l) { return esc(l.label) + ' ×' + l.qty; }).join('<br>')]]) + '</div>';
       var bar;
@@ -441,7 +446,7 @@ KS.views.c = (function () {
           '<button class="btn block" data-act="cPay" data-token="' + esc(token) + '" data-paid="0">支払いをやめる</button>';
         bar = '<div class="s">' + yen(o.total) + '</div><button class="btn pri" data-act="cPay" data-token="' + esc(token) + '" data-paid="1">支払う</button>';
       }
-      return page({ back: '#/c', title: 'お支払い', steps: steps(ORDER_STEPS, 3), body: body, bar: bar });
+      return page({ back: '#/c', up: 1, title: 'お支払い', steps: steps(ORDER_STEPS, 3), body: body, bar: bar });
     });
   }
 
@@ -467,7 +472,7 @@ KS.views.c = (function () {
         var o = res.order;
         if (o.payStatus === '支払い待ち') {
           return page({
-            back: '#/c', title: 'お支払い', body: '<div class="notice warn">お支払いがまだ確かめられていません。お支払いが済むと受付になります。</div>' +
+            back: '#/c', up: 1, title: 'お支払い', body: '<div class="notice warn">お支払いがまだ確かめられていません。お支払いが済むと受付になります。</div>' +
               kv([['受付番号', esc(o.id)], ['合計', yen(o.total)]]) + '<a class="btn pri block" href="' + esc(o.payUrl) + '">お支払いへ進む</a>' + telBtn()
           });
         }
@@ -482,7 +487,7 @@ KS.views.c = (function () {
         var body = doneHead(o.pay === '事前' ? 'お支払いを確かめ、受け付けました' : '取り置きを受け付けました', o.id) + kv(rows) + sentNote() +
           (o.method === '配送' ? '<p class="help">発送したら、あらためてお知らせします。</p>' : '<p class="help">受け取りの前日に、お知らせをお送りします。</p>' + mapBox()) +
           myLink('order', o.token) + '<a class="btn block" href="#/c">はじめの画面へ</a>';
-        return page({ back: '#/c', title: '受付完了', steps: steps(ORDER_STEPS, 4), body: body });
+        return page({ back: '#/c', up: 1, title: '受付完了', steps: steps(ORDER_STEPS, 4), body: body });
       });
     }
     if (kind !== 'salon' && kind !== 'measure') return c90('notfound');
@@ -498,13 +503,13 @@ KS.views.c = (function () {
           '<p class="help">キャンセル・日時の変更は、3時間前まで' + (B && B.inLine ? '「わたしの予約」' : '下の「この予約を確かめる・変える」') + 'からできます。それより後はお電話でご連絡ください。</p>' +
           '<a class="btn block" href="' + esc(gcal('水素サロン（ココスポーツ）', v.date, v.start, v.end)) + '" target="_blank" rel="noopener">' + ico('cal') + 'カレンダーに入れる</a>' +
           mapBox() + myLink('salon', v.token, 'この予約を確かめる・変える') + '<a class="btn block" href="#/c">はじめの画面へ</a>';
-        return page({ back: '#/c', title: '予約完了', steps: steps(SALON_STEPS, 4), body: body });
+        return page({ back: '#/c', up: 1, title: '予約完了', steps: steps(SALON_STEPS, 4), body: body });
       }
       body = doneHead('採寸のご予約を受け付けました', v.id) +
         kv([['学校', esc(v.school)], ['日時', esc(when(v.date, v.start, v.end))], ['人数', v.count + '人'], ['お子さま', esc(v.children)]]) + sentNote() +
         '<a class="btn block" href="' + esc(gcal('制服の採寸（ココスポーツ）', v.date, v.start, v.end)) + '" target="_blank" rel="noopener">' + ico('cal') + 'カレンダーに入れる</a>' +
         mapBox() + myLink('measure', v.token) + '<a class="btn block" href="#/c">はじめの画面へ</a>';
-      return page({ back: '#/c', title: '予約完了', body: body });
+      return page({ back: '#/c', up: 1, title: '予約完了', body: body });
     });
   }
 
@@ -619,14 +624,14 @@ KS.views.c = (function () {
   function c26(r, p, b) {
     if (!b.stages.measure) return closedPage('#/c', '採寸の予約', '採寸のご予約は準備中です。');
     var m = dr('measure');
-    if (m.slotId !== r[0]) { location.replace('#/c/measure'); return ui.loading(); }
+    if (m.slotId !== r[0]) { KS.app.replace('#/c/measure'); return ui.loading(); }
     if (!m._filled && b.profile) { m.name = m.name || b.profile.name; m.phone = m.phone || b.profile.phone; }
     m._filled = 1; if (!m.count) m.count = '1'; saveDraft();
     nextFormKey = 'measure';
     var e = errs.measure || {}, back = '#/c/measure/' + seg(m.schoolId);
     var slot = kv([['学校', esc(m.schoolName)], ['日時', esc(when(m.date, m.start, m.end))]]);
     if (p.check === '1') {
-      if (Object.keys(checkMeasure(m, b.inLine)).length) { location.replace('#/c/measure-form/' + seg(m.slotId)); return ui.loading(); }
+      if (Object.keys(checkMeasure(m, b.inLine)).length) { KS.app.replace('#/c/measure-form/' + seg(m.slotId)); return ui.loading(); }
       var body = slot + kv([['人数', esc(m.count) + '人'], ['お子さま', esc(m.children)], ['保護者', esc(m.name)], ['電話番号', esc(m.phone)],
         b.inLine ? ['確認の連絡', 'LINEでお送りします'] : ['メール', esc(m.email)], m.note ? ['ご要望', ui.br(m.note)] : null]) +
         '<p class="help">取り消しは「わたしの予約」（メールの方は確認のメールのリンク）からできます。</p>' +
@@ -680,7 +685,7 @@ KS.views.c = (function () {
     if (s.menuId !== menuId) { s.menuId = menuId; s.date = ''; s.start = null; s.from = ''; saveDraft(); }
     var from = s.from && s.from >= b.today ? s.from : b.today;
     return call('salonWeek', { menuId: menuId, from: from, ignoreId: mv ? mv.id : '' }).then(function (res) {
-      if (!res.ok) return res.code === 'menu' ? (location.replace('#/c/salon'), ui.loading()) : bad(res);
+      if (!res.ok) return res.code === 'menu' ? (KS.app.replace('#/c/salon'), ui.loading()) : bad(res);
       var m = res.menu, days = res.days, times = days[0].slots.map(function (x) { return x.start; }), cnt = 0;
       var grid = '<div class="slots c-week" style="grid-template-columns:42px repeat(7,1fr)"><div class="h"></div>' +
         days.map(function (d) { var w = u.wd(d.date), dt = u.parse(d.date); return '<div class="h' + (w === 6 ? ' sat' : w === 0 ? ' sun' : '') + '">' + u.WD[w] + '<br>' + (dt.getMonth() + 1) + '/' + dt.getDate() + '</div>'; }).join('');
@@ -725,7 +730,7 @@ KS.views.c = (function () {
   function c32(r, p, b) {
     if (!b.stages.salon) return salonClosed(b.shop.airReserve);
     var s = dr('salon');
-    if (!s.menuId || !s.date || s.start == null) { location.replace('#/c/salon' + (s.menuId ? '/' + seg(s.menuId) : '')); return ui.loading(); }
+    if (!s.menuId || !s.date || s.start == null) { KS.app.replace('#/c/salon' + (s.menuId ? '/' + seg(s.menuId) : '')); return ui.loading(); }
     return call('salonForm').then(function (res) {
       if (!res.ok) return bad(res);
       var f = dr('sf'), pr = res.profile;
@@ -750,12 +755,12 @@ KS.views.c = (function () {
   function c33(r, p, b) {
     if (!b.stages.salon) return salonClosed(b.shop.airReserve);
     var s = dr('salon'), f = dr('sf');
-    if (!s.menuId || !s.date || s.start == null) { location.replace('#/c/salon'); return ui.loading(); }
-    if (Object.keys(checkSalon(f, b.inLine)).length) { location.replace('#/c/salon-form'); return ui.loading(); }
+    if (!s.menuId || !s.date || s.start == null) { KS.app.replace('#/c/salon'); return ui.loading(); }
+    if (Object.keys(checkSalon(f, b.inLine)).length) { KS.app.replace('#/c/salon-form'); return ui.loading(); }
     return call('salonMenus').then(function (res) {
       if (!res.ok) return bad(res);
       var m = (res.menus || []).filter(function (x) { return x.id === s.menuId; })[0];
-      if (!m) { location.replace('#/c/salon'); return ui.loading(); }
+      if (!m) { KS.app.replace('#/c/salon'); return ui.loading(); }
       nextFormKey = 'sf';
       var e = errs.sconf || {};
       var body = kv([
@@ -845,11 +850,12 @@ KS.views.c = (function () {
   /* ================= C50 来店後の声 ================= */
   function c50(r, p, b) {
     var token = r[0] || '', key = token || 'qr';
-    if (!b.stages.voice) return page({ back: '#/c', title: 'ご感想', body: '<div class="notice">ご感想の受け付けは準備中です。</div>' });
+    var up = token ? '#/c/my/salon/' + seg(token) : '#/c';   /* 戻るの親：予約から来たらその予約、店頭のQRからなら、はじめの画面 */
+    if (!b.stages.voice) return page({ back: up, title: 'ご感想', body: '<div class="notice">ご感想の受け付けは準備中です。</div>' });
     var done = (D.voiceDone || {})[key];
     if (done) {
       return page({
-        back: '#/c', title: 'ご感想', body: '<div class="c-done">' + ico('check', 'xl') + '<h1 class="mincho">ありがとうございました</h1></div>' +
+        back: up, title: 'ご感想', body: '<div class="c-done">' + ico('check', 'xl') + '<h1 class="mincho">ありがとうございました</h1></div>' +
           (done.googleUrl ? '<p class="c-lead">よろしければ、Googleにもご感想をお寄せください。これからお店を探す方の参考になります。</p><a class="btn block" href="' + esc(done.googleUrl) + '" target="_blank" rel="noopener">Googleにご感想を書く</a>'
             : '<p class="c-lead">いただいた声は、お店の改善に使わせていただきます。</p>') + '<a class="btn block" href="#/c">はじめの画面へ</a>'
       });
@@ -862,7 +868,7 @@ KS.views.c = (function () {
       ui.field('text', 'ひとこと', { req: false, textarea: 1, value: v.text, ph: '感じたことを、ご自由にどうぞ' }) +
       ui.field('toShop', 'お店に伝えたいこと', { req: false, textarea: 1, value: v.toShop, ph: '気になったことやご要望など（お店だけが読みます）' }) +
       '<p class="help">お名前は出しません。</p>';
-    return page({ back: '#/c', title: 'ご感想', body: body, bar: '<div class="s"></div><button class="btn pri" data-act="cVoice" data-token="' + esc(token) + '">送る</button>' });
+    return page({ back: up, title: 'ご感想', body: body, bar: '<div class="s"></div><button class="btn pri" data-act="cVoice" data-token="' + esc(token) + '">送る</button>' });
   }
 
   /* ================= C60 決まりの表示 ================= */
@@ -952,6 +958,8 @@ KS.views.c = (function () {
   }
   var actions = {
     cRetry: function () { trouble = null; },
+    /* 左上の戻る（決まりは app.js の back） */
+    cBack: function (el) { KS.app.back(el.dataset.to); return false; },
     cLineSkip: function (el) { ui.keep('lineGuideDone', 1); return go(el.dataset.next || 'c'); },
     cLineOpen: function (el) { KS.line.openInLine(el.dataset.next || ''); return false; },
     /* 選ぶボタン（受け取り方・支払い・送り方・受け取りの日） */
@@ -960,7 +968,7 @@ KS.views.c = (function () {
     cSize: function (el) {
       var pid = el.dataset.pid, s = dr('sel'), o = s[pid] || {};
       s[pid] = { size: el.dataset.v, qty: o.size === el.dataset.v ? o.qty : 1 }; saveDraft();
-      if (location.hash.indexOf('?') >= 0) return go('c/item/' + seg(pid));
+      if (location.hash.indexOf('?') >= 0) { KS.app.replace('c/item/' + seg(pid)); return false; }
     },
     cSelQty: function (el) {
       var s = dr('sel'), o = s[el.dataset.pid] || (s[el.dataset.pid] = {});
@@ -1005,8 +1013,8 @@ KS.views.c = (function () {
         if (r.ok) {
           D.lastOrder = { token: r.order.token, lines: r.order.lines.map(function (l) { return { productId: l.productId, size: l.size, qty: l.qty, label: l.label }; }) };
           D.co = {}; D.cartSeen = null; errs.co = {}; errs.confirm = {}; saveDraft();
-          if (r.payUrl) { if (r.payUrl.charAt(0) === '#') location.hash = r.payUrl; else location.href = r.payUrl; return false; }
-          return go('c/done/order/' + seg(r.order.token));
+          if (r.payUrl) { if (r.payUrl.charAt(0) === '#') KS.app.replace(r.payUrl); else location.href = r.payUrl; return false; }
+          return done('c/done/order/' + seg(r.order.token));
         }
         if (r.code === 'input') {
           var e = r.errors || {}, onlyAgree = Object.keys(e).every(function (x) { return x === 'agree'; });
@@ -1025,7 +1033,7 @@ KS.views.c = (function () {
       var token = el.dataset.token, paid = el.dataset.paid === '1';
       if (!paid && !ui.confirm('お支払いをやめて、取り置きを取り消しますか？')) return false;
       return call('devPay', { token: token, paid: paid }).then(function (r) {
-        if (r.ok) return go('c/done/order/' + seg(token));
+        if (r.ok) return done('c/done/order/' + seg(token));
         if (r.code === 'expired') { trouble = { hash: cur(), kind: paid ? 'expired' : 'payStopped', msg: r.message }; return; }
         return actFail(r);
       });
@@ -1063,7 +1071,7 @@ KS.views.c = (function () {
       var m = dr('measure'), f = {};
       ['slotId', 'count', 'children', 'name', 'phone', 'email', 'note', 'agree'].forEach(function (k) { f[k] = m[k]; });
       return call('measureBook', { form: f, utm: KS.app.utm() }).then(function (r) {
-        if (r.ok) { D.measure = {}; errs.measure = {}; saveDraft(); return go('c/done/measure/' + seg(r.booking.token)); }
+        if (r.ok) { D.measure = {}; errs.measure = {}; saveDraft(); return done('c/done/measure/' + seg(r.booking.token)); }
         if (r.code === 'input') {
           var e = r.errors || {}; errs.measure = e; ui.toast(r.message);
           if (Object.keys(e).some(function (x) { return x !== 'agree'; })) return go('c/measure-form/' + seg(m.slotId));
@@ -1096,7 +1104,7 @@ KS.views.c = (function () {
       var s = dr('salon'), f = dr('sf'), form = { menuId: s.menuId, date: s.date, start: s.start };
       ['name', 'kana', 'phone', 'email', 'heardFrom', 'note', 'agree'].forEach(function (k) { form[k] = f[k]; });
       return call('salonBook', { form: form, utm: KS.app.utm() }).then(function (r) {
-        if (r.ok) { D.salon = {}; D.sf = {}; errs.sf = {}; errs.sconf = {}; saveDraft(); return go('c/done/salon/' + seg(r.booking.token)); }
+        if (r.ok) { D.salon = {}; D.sf = {}; errs.sf = {}; errs.sconf = {}; saveDraft(); return done('c/done/salon/' + seg(r.booking.token)); }
         if (r.code === 'input') {
           var e = r.errors || {}; errs.sf = e; errs.sconf = { agree: e.agree }; ui.toast(r.message);
           if (Object.keys(e).some(function (x) { return x !== 'agree'; })) return go('c/salon-form');

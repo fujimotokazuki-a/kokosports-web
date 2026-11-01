@@ -30,7 +30,35 @@ KS.app = (function () {
     return '<div class="bizwrap area-' + area + '">' + inner + '</div>' + (dev ? '<div class="devdock">' + dev + '</div>' : '');
   }
 
+  /* 戻る（お客様の画面の左上）
+     各画面の history.state に「アプリの中で何枚目か（ksDepth）」を書いておく。
+     - 2枚目以降：ひとつ前の画面がアプリの中にあるので history.back()
+     - 1枚目（LINEのメニュー・お知らせ・メールのリンクから直接開いた画面。LIFF では liff.state で入った画面）：
+       その画面の親へ。今の住所を置き換えるので、戻るを重ねても行き来しない
+     画面の中の自動の切り替え（C10→前に選んだ学校の C11 など）は replace を使い、枚数を増やさない */
+  var depth = 0, replacing = null, lastLen = 0;
+  function norm(h) { h = String(h || '').replace(/^#?\/?/, ''); try { return decodeURIComponent(h); } catch (e) { return h; } }
+  function mark() {
+    var st = history.state, rep = replacing, len = history.length, grew = len > lastLen;
+    replacing = null; lastLen = len;
+    if (rep != null && norm(location.hash) === norm(rep)) { if (!depth) depth = 1; }   /* 自分で置き換えた */
+    else if (st && st.ksDepth) { depth = st.ksDepth; return; }                         /* 戻る・進む・読み込み直し */
+    else if (grew || !depth) depth += 1;                                               /* 新しい画面に進んだ */
+    /* ほかに履歴が増えずに住所が変わったとき（LIFF などの置き換え）は、枚数をそのままにする */
+    try { history.replaceState({ ksDepth: depth }, '', location.href); } catch (e) { }
+  }
+  function replace(path) {
+    var h = '#/' + String(path).replace(/^#?\/?/, '');
+    if (norm(location.hash) === norm(h)) { render(); return; }
+    replacing = h; location.replace(h);
+  }
+  function back(parent) {
+    if (depth > 1) history.back();
+    else replace(parent || 'c');
+  }
+
   function render() {
+    mark();
     var p = parse(), my = ++seq;
     if (p.area === 'l' && !KS.views.l) p.area = 'c';   /* 本番では試しのLINEは無い */
     takeUtm(p.params);
@@ -83,6 +111,6 @@ KS.app = (function () {
   window.addEventListener('hashchange', render);
 
   function start() { KS.line.init().then(render); }
-  return { render: render, go: go, parse: parse, utm: utm, start: start };
+  return { render: render, go: go, replace: replace, back: back, parse: parse, utm: utm, start: start };
 })();
 KS.app.start();

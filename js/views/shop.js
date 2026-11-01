@@ -556,7 +556,7 @@ KS.views.s = (function () {
   }
   function saveBar(act, label, data) { return '<div class="submitbar"><span class="what">変えたら保存してください</span>' + btn(label || '保存する', act, data, 'pri') + '</div>'; }
 
-  var SHOP_F = [['name', '店の名前'], ['address', '住所'], ['tel', '電話'], ['hours', '営業時間（お客様に見せる書き方）'], ['closedText', '定休日（書き方）'], ['instagram', 'Instagram のリンク'], ['map', '地図のリンク'], ['lineAddUrl', '公式LINEの友だち追加のリンク'], ['airReserve', 'Airリザーブのリンク（サロンを切り替えるまで）'], ['googleReviewUrl', 'Googleのクチコミのリンク'], ['owner', '運営責任者'], ['manager', '店長']];
+  var SHOP_F = [['name', '店の名前'], ['address', '住所'], ['tel', '電話'], ['hours', '営業時間（お客様に見せる書き方）'], ['closedText', '定休日（書き方）'], ['instagram', 'Instagram のリンク'], ['map', '地図のリンク'], ['lineAddUrl', '公式LINEの友だち追加のリンク'], ['airReserve', 'Airリザーブのリンク（サロンを切り替えるまで）'], ['googleReviewUrl', 'Googleの口コミの住所（ご感想のあとに案内する）'], ['owner', '運営責任者'], ['manager', '店長']];
   var TPL = [['order_received', '取り置きの受付'], ['order_paid', '支払いの確認'], ['order_dayBefore', '取り置きの前日'], ['order_noShow', '受け取り日を過ぎたとき'], ['order_cancelled', '取り置きの取り消し'], ['order_shipped', '発送'], ['restock', '入荷'],
     ['measure_received', '採寸の受付'], ['measure_dayBefore', '採寸の前日'], ['salon_received', 'サロンの受付'], ['salon_changed', 'サロンの日時の変更'], ['salon_cancelled', 'サロンの取り消し'], ['salon_dayBefore', 'サロンの前日']];
   var NUMS = [['pickup', 'fromDays', '受け取り日：何日後から選べるか', '日'], ['pickup', 'toDays', '受け取り日：何日後まで選べるか', '日'], ['pickup', 'keepDays', '受け取り日を過ぎて取り消すまで', '日'],
@@ -621,7 +621,14 @@ KS.views.s = (function () {
   var SEC = {
     shop: function (r) {
       var s = r.cfg.shop;
-      return '<div class="frm" id="cf"><section class="card"><div class="fgrid">' + SHOP_F.map(function (x) { return ui.field(x[0], x[1], { value: s[x[0]], req: false }); }).join('') + '</div></section></div>' + saveBar('sCfgShop');
+      return '<div class="frm" id="cf"><section class="card"><div class="fgrid">' + SHOP_F.map(function (x) { return ui.field(x[0], x[1], { value: s[x[0]], req: false }); }).join('') + '</div></section></div>' +
+        /* 口コミの住所の作り方。案内は点数で分けない（D-004・Googleの決まり） */
+        '<details class="rules"><summary>Googleの口コミの住所の作り方</summary><ul>' +
+        '<li>Googleビジネスプロフィール（お店のGoogleアカウント）で「クチコミを依頼」（または「クチコミを増やす」）を押すと、短い住所（https://g.page/r/… の形）が出ます。それを「コピー」して、上の欄に貼ります。</li>' +
+        '<li>短い住所が出ないときは、お店の「場所ID」を調べて https://search.google.com/local/writereview?placeid=場所ID の形にします（場所IDは Google の「Place ID Finder」でお店の名前を探すと出ます）。</li>' +
+        '<li>貼ったら保存して、お客様の画面の「ご感想」を送ったあとの「Googleにご感想を書く」を押し、お店の口コミを書く画面が開くか確かめます。</li>' +
+        '<li>この住所は、ご感想を送ったすべての方に同じ文で案内します。星の数で案内を変えたり、特典と引き換えにお願いしたりはしません（Googleの決まりで禁止されています）。</li>' +
+        '<li>空のときは、Googleの案内を出さずに「いただいた声は、お店の改善に使わせていただきます」とだけ出します。</li></ul></details>' + saveBar('sCfgShop');
     },
     days: function (r) {
       var c = r.cfg;
