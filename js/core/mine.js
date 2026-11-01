@@ -6,7 +6,7 @@ KS.core.mine = (function () {
   function boot(ctx) {
     var cf = c.cfg(ctx), me = c.meLine(ctx);
     return {
-      ok: true, inLine: !!me, shop: cf.shop, stages: cf.stages, opening: cf.opening, openDays: cf.openDays, open: cf.open, close: cf.close,
+      ok: true, inLine: !!me, shop: cf.shop, stages: cf.stages, opening: cf.opening, reserve: { schoolIds: cf.stages.reserve ? cf.reserve.schoolIds : [], handText: cf.reserve.handText }, openDays: cf.openDays, open: cf.open, close: cf.close,
       today: ctx.now().date, now: ctx.now(), legal: cf.legal, heard: KS.core.model.HEARD, sampleData: !!cf.sampleData,
       profile: me ? { name: me.name, kana: me.kana, phone: me.phone, email: me.email, schoolId: me.schoolId, lineName: me.lineName } : null,
       holidays: ctx.db.all('holidays').filter(function (h) { return h.date >= ctx.now().date; }).slice(0, 10)
@@ -101,7 +101,8 @@ KS.core.mine = (function () {
       });
       ctx.db.all('measureBookings').forEach(function (b) {
         if (b.date !== tmr || b.status !== '予約' || b.reminded) return;
-        N.send(ctx, ctx.db.get('customers', b.customerId), { kind: '前日', template: 'measure_dayBefore', refId: b.id, mode: 'push', optional: true, subject: '明日は採寸のご予約日です', vars: B.measureVars(ctx, b) });
+        var fit = b.type === '試着';
+        N.send(ctx, ctx.db.get('customers', b.customerId), { kind: '前日', template: fit ? 'fit_dayBefore' : 'measure_dayBefore', refId: b.id, mode: 'push', optional: true, subject: fit ? '明日は試着のご来店の日です' : '明日は採寸のご予約日です', vars: B.measureVars(ctx, b) });
         ctx.db.update('measureBookings', b.id, { reminded: true }); r.dayBefore++;
       });
     }

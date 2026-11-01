@@ -112,7 +112,12 @@ KS.core.shop = (function () {
   function orderSet(ctx, args) {
     var o = ctx.db.get('orders', args.id); if (!o) return u.fail('見つかりません。', 'gone');
     var st = args.status, now = ctx.now(), cust = ctx.db.get('customers', o.customerId);
-    if (st === '用意済み') { if (o.status !== '受付') return u.fail('受付のものだけ用意済みにできます。', 'state'); ctx.db.update('orders', o.id, { status: '用意済み' }); }
+    if (st === '用意済み') {
+      if (o.status !== '受付') return u.fail('受付のものだけ用意済みにできます。', 'state');
+      ctx.db.update('orders', o.id, { status: '用意済み' });
+      /* 予約は受け取りの日を決めていないので、そろったことを知らせる */
+      if (o.type === '予約') N.send(ctx, cust, { kind: '用意', template: 'preorder_ready', refId: o.id, mode: 'push', subject: 'ご予約の品のご用意ができました', vars: { 番号: o.id, 品物: G.linesText(o) } });
+    }
     else if (st === '受け取り済み') ctx.db.update('orders', o.id, { status: '受け取り済み', doneAt: u.stamp(now.ts) });
     else if (st === '発送済み') {
       ctx.db.update('orders', o.id, { status: '発送済み', doneAt: u.stamp(now.ts), ship: Object.assign({}, o.ship || {}, { tracking: String(args.tracking || '') }) });

@@ -149,13 +149,30 @@ KS.core.booking = (function () {
     return { ok: true, booking: salonView(ctx, b) };
   }
 
-  /* ================= 採寸 ================= */
+  /* ================= 採寸・試着 =================
+     試着（予約を開けた小学校）：営業日の開店から 45分ごと・1枠2組。枠は表に持たず、ここで作る。
+     枠の番号は日と時刻だけ（F2026-11-05-600）なので、学校が違っても同じ時間の試着は合わせて2組まで */
+  function isFit(ctx, schoolId) { var s = c.school(ctx, schoolId); return !!(s && s.kind !== '中' && KS.core.goods.reserveOpen(ctx, schoolId)); }
+  function fitSlots(ctx) {
+    var cf = c.cfg(ctx), f = cf.reserve.fit, now = ctx.now(), out = [];
+    for (var i = 0; i <= f.horizonDays; i++) {
+      var d = u.addDays(now.date, i);
+      if (!c.isOpen(ctx, d)) continue;
+      for (var t = cf.open; t + f.stepMin <= cf.close; t += f.stepMin) {
+        if (i === 0 && t < now.min + f.leadMin) continue;
+        out.push({ id: 'F' + d + '-' + t, schoolId: '', date: d, start: t, end: t + f.mins, capacity: f.perSlot });
+      }
+    }
+    return out;
+  }
+  function fitSlot(ctx, id) { return fitSlots(ctx).filter(function (s) { return s.id === id; })[0] || null; }
   function measureSchools(ctx) {
     var cf = c.cfg(ctx);
-    var list = ctx.db.all('schools').filter(function (s) { return s.measure; }).sort(u.by('sort'));
+    var list = ctx.db.all('schools').filter(function (s) { return s.measure && s.visible !== false; }).sort(u.by('sort'));
     return { ok: true, open: !!cf.stages.measure, schools: list.map(function (s) { return { id: s.id, name: s.name, short: s.short, slots: slotsOf(ctx, s.id).length }; }) };
   }
   function slotsOf(ctx, schoolId, includePast) {
+    if (isFit(ctx, schoolId)) return fitSlots(ctx);
     var now = ctx.now();
     return ctx.db.all('measureSlots').filter(function (s) {
       return s.schoolId === schoolId && (includePast || s.date > now.date || (s.date === now.date && s.start > now.min + 60));
@@ -166,15 +183,20 @@ KS.core.booking = (function () {
   }
   /* C25 学校と日程の枠 */
   function measureSlots(ctx, args) {
-    var s = c.school(ctx, args.schoolId); if (!s || !s.measure) return u.fail('この学校の採寸はありません。', 'notfound');
+    var s = c.school(ctx, args.schoolId), fit = isFit(ctx, args.schoolId);
+    if (!s || (!s.measure && !fit)) return u.fail('この学校の採寸はありません。', 'notfound');
     var list = slotsOf(ctx, s.id).map(function (x) { var left = x.capacity - slotUsed(ctx, x.id); return { id: x.id, date: x.date, start: x.start, end: x.end, left: Math.max(0, left), mark: left <= 0 ? '×' : (left <= 1 ? '△' : '○') }; });
-    return { ok: true, school: s, slots: list };
+    return { ok: true, school: s, slots: list, fit: fit, handText: fit ? c.cfg(ctx).reserve.handText : '' };
   }
   /* C26 → C17 */
   function measureBook(ctx, args) {
     var f = args.form || {}, me = c.meLine(ctx), cf = c.cfg(ctx);
-    if (!cf.stages.measure) return u.fail('採寸のご予約は準備中です。', 'closed');
-    var slot = ctx.db.get('measureSlots', f.slotId); if (!slot) return u.fail('日程を選んでください。', 'slot');
+    var fit = /^F/.test(String(f.slotId || ''));
+    if (fit && !isFit(ctx, f.schoolId)) return u.fail('この学校の試着のご予約は、まだ始まっていません。', 'closed');
+    if (!fit && !cf.stages.measure) return u.fail('採寸のご予約は準備中です。', 'closed');
+    var slot = fit ? fitSlot(ctx, f.slotId) : ctx.db.get('measureSlots', f.slotId);
+    if (!slot) return u.fail(fit ? 'その時間はご予約できません。ほかの時間をお選びください。' : '日程を選んでください。', 'slot');
+    if (fit) slot = { id: slot.id, schoolId: String(f.schoolId), date: slot.date, start: slot.start, end: slot.end, capacity: slot.capacity };
     var e = {};
     var count = +f.count || 0;
     if (count < 1 || count > 5) e.count = '人数を選んでください。';
@@ -189,21 +211,21 @@ KS.core.booking = (function () {
     var now = ctx.now();
     var b = ctx.db.insert('measureBookings', {
       id: ctx.db.nextId('M'), token: u.token(), slotId: slot.id, schoolId: slot.schoolId, date: slot.date, start: slot.start, end: slot.end,
-      customerId: cust.id, count: count, children: String(f.children).trim(), status: '予約', createdAt: u.stamp(now.ts), reminded: false,
+      customerId: cust.id, count: count, children: String(f.children).trim(), status: '予約', createdAt: u.stamp(now.ts), reminded: false, type: fit ? '試着' : '採寸',
       contact: { name: String(f.name).trim(), phone: u.normPhone(f.phone), email: u.normEmail(f.email || '') }, note: String(f.note || ''), utm: args.utm || null
     });
-    c.audit(ctx, '採寸の予約を登録', b.id + '（' + c.school(ctx, slot.schoolId).short + ' ' + slot.date + '）');
-    N.send(ctx, cust, { kind: '受付', template: 'measure_received', refId: b.id, mode: 'reply', subject: '採寸のご予約を受け付けました', vars: measureVars(ctx, b) });
+    c.audit(ctx, (fit ? '試着' : '採寸') + 'の予約を登録', b.id + '（' + c.school(ctx, slot.schoolId).short + ' ' + slot.date + '）');
+    N.send(ctx, cust, { kind: '受付', template: fit ? 'fit_received' : 'measure_received', refId: b.id, mode: 'reply', subject: (fit ? '試着のご来店' : '採寸') + 'のご予約を受け付けました', vars: measureVars(ctx, b) });
     return { ok: true, booking: measureView(ctx, b) };
   }
   function measureVars(ctx, b) {
     var s = c.school(ctx, b.schoolId);
-    return { 学校: s ? s.name : '', 日時: u.jpDate(b.date) + ' ' + u.hm(b.start) + '〜' + u.hm(b.end), 人数: b.count, リンク: c.link(ctx, 'my/measure/' + b.token) };
+    return { 学校: s ? s.name : '', 日時: u.jpDate(b.date) + ' ' + u.hm(b.start) + '〜' + u.hm(b.end), 人数: b.count, お渡し: c.cfg(ctx).reserve.handText, リンク: c.link(ctx, 'my/measure/' + b.token) };
   }
   function measureView(ctx, b) {
     var s = c.school(ctx, b.schoolId), now = ctx.now();
     var future = b.date > now.date || (b.date === now.date && b.start > now.min);
-    return { id: b.id, token: b.token, kind: 'measure', school: s ? s.name : '', schoolId: b.schoolId, date: b.date, start: b.start, end: b.end, count: b.count, children: b.children, status: b.status, createdAt: b.createdAt, canCancel: b.status === '予約' && future, contact: b.contact };
+    return { id: b.id, token: b.token, kind: 'measure', type: b.type || '採寸', school: s ? s.name : '', schoolId: b.schoolId, date: b.date, start: b.start, end: b.end, count: b.count, children: b.children, status: b.status, createdAt: b.createdAt, canCancel: b.status === '予約' && future, contact: b.contact };
   }
   function measureCancel(ctx, args) {
     var b = KS.core.goods.findOwned(ctx, 'measureBookings', args); if (!b) return u.fail('この予約は見つかりません。', 'gone');
@@ -217,6 +239,6 @@ KS.core.booking = (function () {
     menus: menus, menu: menu, active: active, freeSeats: freeSeats, startTimes: startTimes, slotState: slotState, salonMenus: salonMenus, salonWeek: salonWeek,
     salonForm: salonForm, salonBook: salonBook, salonView: salonView, salonVars: salonVars, salonCancel: salonCancel, salonMove: salonMove, isFirst: isFirst,
     measureSchools: measureSchools, measureSlots: measureSlots, slotsOf: slotsOf, slotUsed: slotUsed, measureBook: measureBook, measureView: measureView, measureVars: measureVars,
-    measureCancel: measureCancel, minutesUntil: minutesUntil
+    measureCancel: measureCancel, minutesUntil: minutesUntil, isFit: isFit, fitSlots: fitSlots
   };
 })();

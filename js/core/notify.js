@@ -32,7 +32,9 @@ KS.core.notify = (function () {
     var cf = c.cfg(ctx), vars = shopVars(ctx), k;
     for (k in (opts.vars || {})) vars[k] = opts.vars[k];
     vars['名前'] = vars['名前'] || c.nameOf(customer);
-    var text = fill(cf.templates[opts.template] || opts.text || '', vars);
+    /* 台帳の設定に無い文（あとから足したお知らせ）は、最初の文を使う */
+    var tpl = cf.templates[opts.template] || KS.core.model.settings().templates[opts.template] || opts.text || '';
+    var text = fill(tpl, vars);
     var now = ctx.now(), rec = {
       id: ctx.db.nextId('N'), at: u.stamp(now.ts), kind: opts.kind, template: opts.template || '', customerId: customer ? customer.id : '',
       refId: opts.refId || '', channel: '', mode: '', count: 0, status: '', text: text, error: ''

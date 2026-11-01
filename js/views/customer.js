@@ -89,6 +89,16 @@ KS.views.c = (function () {
     return page({ back: back, title: title, body: '<div class="c-empty">' + ico('clock', 'xl') + '<p><b>近日公開</b><br>' + esc(openText(B, 'soon') || '準備中です。') + '</p></div>' + (extra || '') + telBtn() });
   }
   function soonBar(b) { return '<div class="s">在庫の確認・お取り置き</div><button class="btn pri" disabled>' + esc(openText(b, 'orderShort') || '準備中') + '</button>'; }
+  /* 予約（すぐ予約・来店して試着）を開けた学校か */
+  function rsvOpen(b, sid) { return !!(b && b.stages.reserve && b.reserve && (b.reserve.schoolIds || []).indexOf(sid) >= 0); }
+  function rsvNote(b) { return '<div class="notice">' + esc((b.reserve && b.reserve.handText) || '') + '</div>'; }
+  /* 予約のかご（この端末の中だけ。送るときに裏側で品物と価格を確かめ直す） */
+  function rsv() { var r = D.rsv || (D.rsv = { schoolId: '', lines: [] }); if (!r.lines) r.lines = []; return r; }
+  function rsvCount() { return u.sum(rsv().lines, function (l) { return l.qty; }); }
+  function rsvTotal() { return u.sum(rsv().lines, function (l) { return l.price * l.qty; }); }
+  function rsvBar() {
+    return rsvCount() ? '<div class="s">予約に ' + rsvCount() + '点<br>' + yen(rsvTotal()) + '</div><a class="btn pri" href="#/c/reserve">予約の確認へ' + ico('next') + '</a>' : '';
+  }
   function soonNote(b) { return '<div class="notice">' + esc(openText(b, 'order') || '在庫の確認とお取り置きは準備中です。') + '</div>'; }
 
   /* ================= C90 困ったときの画面（画面遷移 v02 第4章） ================= */
@@ -138,14 +148,14 @@ KS.views.c = (function () {
   function c00(r, p, b) {
     var s = b.shop, st = b.stages, last = lastSchool();
     var tasks = [
-      ['#/c/school' + (last ? '/' + seg(last) : ''), 'shirt', st.order ? '体操服・制服' : '体操服の料金表', st.order ? '学校を選んで、サイズと在庫を見る・取り置き' : st.price ? '学校を選んで、品物とサイズごとの価格を見る' : '近日公開'],
+      ['#/c/school' + (last ? '/' + seg(last) : ''), 'shirt', st.order ? '体操服・制服' : rsvNames(b) ? '体操服の料金表・ご予約' : '体操服の料金表', st.order ? '学校を選んで、サイズと在庫を見る・取り置き' : rsvNames(b) ? '学校を選んで価格を見る。' + rsvNames(b) + 'はご予約を受付中' : st.price ? '学校を選んで、品物とサイズごとの価格を見る' : '近日公開'],
       ['#/c/salon', 'drop', '水素サロン', st.salon ? '完全個室・2席。空いている時間を見て予約' : 'ネットのご予約は近日公開'],
-      ['#/c/my', 'list', 'わたしの予約', st.order || st.salon || st.measure ? '取り置き・採寸・サロンの確認と取り消し' : '近日公開']
+      ['#/c/my', 'list', 'わたしの予約', st.order || st.salon || st.measure || st.reserve ? 'ご予約の確認と取り消し' : '近日公開']
     ];
     var hol = (b.holidays || []).filter(function (h) { return h.date <= u.addDays(b.today, 30); });
     var body = '<section class="c-intro"><div class="en">KOKO SPORTS</div><h1 class="mincho">制服・体操服と、<br>水素サロンのお店</h1>' +
       '<p>神栖二中・神栖四中の制服と体操服、息栖小・深芝小・大野原小・大野原西小の体操服を扱っています。</p></section>' +
-      (priceOnly(b) ? soonNote(b) : '') +
+      (priceOnly(b) ? (rsvNames(b) ? rsvNote(b) : soonNote(b)) : '') +
       '<nav class="c-tasks">' + tasks.map(function (t) {
         return '<a href="' + t[0] + '">' + ico(t[1], 'lg') + '<span><b>' + esc(t[2]) + '</b><small>' + esc(t[3]) + '</small></span>' + ico('next') + '</a>';
       }).join('') + '</nav>' +
@@ -161,6 +171,12 @@ KS.views.c = (function () {
       ]) +
       (b.inLine ? '' : '<p class="help">公式LINEで友だちになると、受付の確認や入荷のお知らせがLINEに届きます。<a class="c-link" href="' + esc(s.lineAddUrl) + '" target="_blank" rel="noopener">友だちになる</a></p>');
     return head() + '<div class="c-body">' + flashHtml() + body + '</div>' + foot();
+  }
+
+  /* 予約を開けた学校の短い名前（「大野原小・大野原西小」） */
+  function rsvNames(b) {
+    var ids = (b.reserve && b.stages.reserve && b.reserve.schoolIds) || [], names = { onohara: '大野原小', onoharanishi: '大野原西小', ikisu: '息栖小', fukashiba: '深芝小' };
+    return ids.map(function (x) { return names[x] || x; }).join('・');
   }
 
   /* ================= C01 LINEで続ける案内 ================= */
@@ -199,7 +215,7 @@ KS.views.c = (function () {
   function c11(r, p, b) {
     if (!goodsShown(b)) return soonPage('#/c', '体操服・制服');
     var po = priceOnly(b);
-    var sid = r[0];
+    var sid = r[0], ro = rsvOpen(b, sid) && !b.stages.order;   /* 予約は取り置き（在庫を見て買う）を始める前の形。始めたら通常の取り置きに戻る */
     return Promise.all([call('schoolItems', { schoolId: sid }), call('cart', { cartId: cartId() })]).then(function (x) {
       var res = x[0], cr = x[1];
       if (!res.ok) return bad(res);
@@ -209,7 +225,7 @@ KS.views.c = (function () {
         if (it.needsMeasure) return '<a class="c-item" href="#/c/item/' + seg(it.id) + '"><span class="n">' + esc(it.name) + '</span><span class="r"><span class="mk">サイズ・価格は採寸のあと</span></span></a>';
         var pr = it.priceTentative ? '<span class="mk">価格は近日掲載</span>' : '<span class="pr">' + yen(it.price) + (it.priceFrom ? '〜' : '') + '</span>';
         return '<a class="c-item" href="#/c/item/' + seg(it.id) + '"><span class="n">' + esc(it.name) + (it.note ? '<small>' + esc(it.note) + '</small>' : '') + '</span>' +
-          '<span class="r">' + pr + (po ? '' : '<span class="mk ' + markCls(it.state) + '">' + esc(MARK[it.state] || it.state) + '</span>') + '</span></a>';
+          '<span class="r">' + pr + (po || ro ? '' : '<span class="mk ' + markCls(it.state) + '">' + esc(MARK[it.state] || it.state) + '</span>') + '</span></a>';
       };
       var need = res.items.filter(function (i) { return i.required && !i.needsMeasure; }), opt = res.items.filter(function (i) { return !i.required; });
       var msr = res.items.filter(function (i) { return i.needsMeasure; });
@@ -221,14 +237,18 @@ KS.views.c = (function () {
       }
       var gift = res.campaign ? '<div class="c-box c-gift">' + ico('star', 'lg') + '<div>' + (res.campaign.title ? '<b>' + esc(res.campaign.title) + '</b>' : '') +
         '<ul>' + String(res.campaign.text).split('\n').filter(function (x) { return x.trim(); }).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul></div></div>' : '';
-      var body = '<div class="c-pagehd"><h1>' + esc(s.name) + '</h1><a class="c-link" href="#/c/school?pick=1">学校を変える</a></div>' + (po ? soonNote(b) : '') + measure + gift +
+      var routes = ro ? sec('ご予約の方法', '<div class="c-routes">' +
+          '<a href="#/c/school/' + seg(s.id) + '" data-act="cJump" data-to="c-items">' + ico('bag', 'lg') + '<span><b>すぐ予約する</b><small>下の品物からサイズを選んで、このまま予約</small></span>' + ico('next') + '</a>' +
+          '<a href="#/c/measure/' + seg(s.id) + '">' + ico('cal', 'lg') + '<span><b>来店して試着してから</b><small>試着の日時を予約（30分）。試着のあと、お店でご予約</small></span>' + ico('next') + '</a></div>' +
+          rsvNote(b) + '<p class="help">お支払いは、お渡しのときに店頭で。</p>') : '';
+      var body = '<div class="c-pagehd"><h1>' + esc(s.name) + '</h1><a class="c-link" href="#/c/school?pick=1">学校を変える</a></div>' + (ro ? routes : po ? soonNote(b) : '') + measure + gift +
         (res.items.length
-          ? (need.length ? sec(po ? 'そろえる品' : 'そろえる品（取り置きできます）', '<div class="c-items">' + need.map(item).join('') + '</div>') : '') +
+          ? '<div id="c-items"></div>' + (need.length ? sec(ro ? 'そろえる品（ご予約できます）' : po ? 'そろえる品' : 'そろえる品（取り置きできます）', '<div class="c-items">' + need.map(item).join('') + '</div>') : '') +
             (msr.length ? sec('制服（採寸してからご用意します）', '<div class="c-items">' + msr.map(item).join('') + '</div>') : '') +
             (opt.length ? sec('あると便利', '<div class="c-items">' + opt.map(item).join('') + '</div>') : '') +
-            '<p class="help">価格は税込みです。「〜」はサイズによって価格が変わる品です。' + (po ? '品物を押すと、サイズごとの価格が見られます。' : '「残りわずか」「品切れ」はネットと店頭を合わせた在庫です。') + '</p>'
+            '<p class="help">価格は税込みです。「〜」はサイズによって価格が変わる品です。' + (ro ? '品物を押して、サイズを選ぶと予約に入れられます。「価格は近日掲載」の品は、価格が決まってからご予約できます。' : po ? '品物を押すと、サイズごとの価格が見られます。' : '「残りわずか」「品切れ」はネットと店頭を合わせた在庫です。') + '</p>'
           : '<div class="notice">この学校の品物は準備中です。お電話でお問い合わせください。</div>' + telBtn() + '<a class="btn block" href="#/c/school?pick=1">扱っている学校を見る</a>');
-      var bar = po ? soonBar(b) : cr.ok && cr.count ? '<div class="s">かごに ' + cr.count + '点<br>' + yen(cr.goods) + '</div><a class="btn pri" href="#/c/cart">' + ico('bag') + 'かごを見る</a>' : '';
+      var bar = ro ? rsvBar() : po ? soonBar(b) : cr.ok && cr.count ? '<div class="s">かごに ' + cr.count + '点<br>' + yen(cr.goods) + '</div><a class="btn pri" href="#/c/cart">' + ico('bag') + 'かごを見る</a>' : '';
       return page({ back: '#/c/school?pick=1', title: s.short, body: body, bar: bar });
     });
   }
@@ -248,7 +268,7 @@ KS.views.c = (function () {
   function c12(r, p, b) {
     if (!goodsShown(b)) return soonPage('#/c', '体操服・制服');
     var pid = r[0];
-    return Promise.all([call('item', { productId: pid, cartId: cartId() }), call('cart', { cartId: cartId() })]).then(function (x) {
+    return Promise.all([call('item', { productId: pid, cartId: cartId(), schoolId: lastSchool() }), call('cart', { cartId: cartId() })]).then(function (x) {
       var res = x[0], cr = x[1];
       if (!res.ok) return bad(res);
       var pr = res.product, sc = res.school, sel = dr('sel')[pid] || {};
@@ -270,6 +290,18 @@ KS.views.c = (function () {
           (b.stages.measure && sc ? '<a class="btn sm" href="#/c/measure/' + seg(sc.id) + '">採寸を予約' + ico('next') + '</a>' : '') + '</div></div>' +
           '<p class="help">サイズ：' + res.sizes.map(function (z) { return esc(z.label); }).join('・') + '</p>' + (b.stages.measure ? '' : telBtn());
         return page({ back: back, title: '品物とサイズ', body: body0 });
+      }
+      /* 予約を開けた学校：サイズを選んで予約に入れる（在庫は出さない） */
+      if (res.reserveOpen && !b.stages.order) {
+        var rsizes = '<div class="sizes c-sizes priced">' + res.sizes.map(function (z) {
+          return '<button type="button" class="' + (size === z.size ? 'sel' : '') + '" data-act="cSize" data-pid="' + esc(pid) + '" data-v="' + esc(z.size) + '">' + esc(z.label) + '<em>' + yen(z.price) + '</em></button>';
+        }).join('') + '</div>';
+        var rcell = res.sizes.filter(function (z) { return z.size === size; })[0];
+        var rbody = info + rsvNote(b) + sec('サイズ', rsizes + (rcell ? '<div class="c-qtyrow"><span>数</span>' + qtyBox('cSelQty', 'data-pid="' + esc(pid) + '"', qty) + '</div>' : '<p class="help">サイズを選んでください。迷ったら「来店して試着」もご予約できます。</p>')) +
+          guideTable(pr.sizeGuide) + (rsvCount() ? '<a class="c-cartlink" href="#/c/reserve">' + ico('bag') + '予約に ' + rsvCount() + '点 入っています<span>予約の確認へ' + ico('next') + '</span></a>' : '');
+        var rbar = rcell ? '<div class="s">' + esc(rcell.label) + '・' + qty + '点<br>' + yen(rcell.price * qty) + '</div><button class="btn pri" data-act="cRsvAdd" data-pid="' + esc(pid) + '" data-size="' + esc(rcell.size) + '" data-label="' + esc((sc ? sc.short + ' ' : '') + pr.name + '（' + rcell.label + '）') + '" data-price="' + rcell.price + '" data-school="' + esc(res.reserveSchoolId) + '">' + ico('bag') + '予約に入れる</button>'
+          : '<div class="s">サイズを選んでください</div><button class="btn pri" disabled>予約に入れる</button>';
+        return page({ back: back, title: '品物とサイズ', body: rbody, bar: rbar });
       }
       /* 料金表だけの間：サイズと価格の表。在庫・かごは出さない */
       if (priceOnly(b)) {
@@ -497,6 +529,13 @@ KS.views.c = (function () {
         }
         if (o.status === '取り消し') return c90('gone');
         nextReceive = o.id;
+        if (o.type === '予約') {
+          var body1 = doneHead('ご予約を受け付けました', o.id) +
+            kv([['品物', o.lines.map(function (l) { return esc(l.label) + ' ×' + l.qty; }).join('<br>')], ['合計', yen(o.total) + '（お渡しのときに店頭で）'], ['お渡し', esc(o.handText)]]) + sentNote() +
+            '<p class="help">入荷して用意ができたら、' + (B && B.inLine ? 'LINE' : 'お電話かメール') + 'でお知らせします。</p>' + mapBox() +
+            myLink('order', o.token) + '<a class="btn block" href="#/c">はじめの画面へ</a>';
+          return page({ back: '#/c', up: 1, title: '予約完了', body: body1 });
+        }
         var rows = [
           ['品物', o.lines.map(function (l) { return esc(l.label) + ' ×' + l.qty; }).join('<br>')],
           ['受け取り', o.method === '配送' ? '配送：' + esc(o.ship ? o.ship.method : '') : 'お店で ' + esc(u.jpDate(o.pickupDate))],
@@ -524,12 +563,53 @@ KS.views.c = (function () {
           mapBox() + myLink('salon', v.token, 'この予約を確かめる・変える') + '<a class="btn block" href="#/c">はじめの画面へ</a>';
         return page({ back: '#/c', up: 1, title: '予約完了', steps: steps(SALON_STEPS, 4), body: body });
       }
-      body = doneHead('採寸のご予約を受け付けました', v.id) +
+      var vfit = v.type === '試着';
+      body = doneHead(vfit ? '試着のご来店のご予約を受け付けました' : '採寸のご予約を受け付けました', v.id) +
         kv([['学校', esc(v.school)], ['日時', esc(when(v.date, v.start, v.end))], ['人数', v.count + '人'], ['お子さま', esc(v.children)]]) + sentNote() +
-        '<a class="btn block" href="' + esc(gcal('制服の採寸（ココスポーツ）', v.date, v.start, v.end)) + '" target="_blank" rel="noopener">' + ico('cal') + 'カレンダーに入れる</a>' +
+        (vfit ? '<p class="help">試着のあと、そのままお店でご予約いただけます。' + esc((b.reserve && b.reserve.handText) || '') + '</p>' : '') +
+        '<a class="btn block" href="' + esc(gcal(vfit ? '体操服の試着（ココスポーツ）' : '制服の採寸（ココスポーツ）', v.date, v.start, v.end)) + '" target="_blank" rel="noopener">' + ico('cal') + 'カレンダーに入れる</a>' +
         mapBox() + myLink('measure', v.token) + '<a class="btn block" href="#/c">はじめの画面へ</a>';
       return page({ back: '#/c', up: 1, title: '予約完了', body: body });
     });
+  }
+
+  /* ================= C18 予約：品物の確認・連絡先・お約束（1つの画面） ================= */
+  function checkRsv(f, inLine) {
+    var e = {};
+    if (!String(f.children || '').trim()) e.children = 'お子さまのお名前を入力してください。';
+    if (!String(f.name || '').trim()) e.name = '保護者のお名前を入力してください。';
+    if (!u.okPhone(f.phone)) e.phone = '電話番号をご確認ください（10〜11桁）。';
+    if (!inLine && !u.okEmail(f.email)) e.email = 'メールアドレスをご確認ください。確認のお知らせをお送りします。';
+    if (!f.agree) e.agree = 'お渡しの時期と先着順を確かめて、チェックを入れてください。';
+    return e;
+  }
+  function c18(r, p, b) {
+    var rv = rsv(), sid = rv.schoolId, more = '#/c/school' + (sid ? '/' + seg(sid) : '');
+    if (!rsvOpen(b, sid) || !rv.lines.length) {
+      return page({ back: more, title: 'ご予約', body: '<div class="c-empty">' + ico('bag', 'xl') + '<p>予約に入れた品はありません</p></div><a class="btn pri block" href="' + more + '">品物を選ぶ</a>' });
+    }
+    var f = dr('rsvf'), e = errs.rsvf || {};
+    if (!f._filled && b.profile) { ['name', 'kana', 'phone', 'email'].forEach(function (k) { if (!f[k] && b.profile[k]) f[k] = b.profile[k]; }); }
+    f._filled = 1; saveDraft();
+    nextFormKey = 'rsvf';
+    var lines = rv.lines.map(function (l, i) {
+      return '<div class="c-line"><div class="n">' + esc(l.label) + '<small>' + yen(l.price) + ' × ' + l.qty + '点</small></div>' +
+        '<div class="r"><b>' + yen(l.price * l.qty) + '</b>' + qtyBox('cRsvQty', 'data-i="' + i + '"', l.qty) +
+        '<button type="button" class="linkbtn" data-act="cRsvQty" data-i="' + i + '" data-d="-99">外す</button></div></div>';
+    }).join('');
+    var body = '<div class="c-lines">' + lines + '</div>' + kv([['合計', '<b>' + yen(rsvTotal()) + '</b>（税込み・' + rsvCount() + '点）'], ['お支払い', 'お渡しのときに店頭で']]) +
+      '<a class="btn block" href="' + more + '">' + ico('plus') + '続けて選ぶ</a>' +
+      sec('ご予約のお約束', '<ul class="c-points"><li>' + esc(b.reserve.handText) + '</li><li>ご予約の早い順（先着順）にご用意します。入荷の数によっては、お待たせすることがあります。</li><li>サイズに迷うときは、お店で試着してから変えられます。</li><li>取り消しは「わたしの予約」' + (b.inLine ? '' : '（確認のメールのリンク）') + 'からできます。</li></ul>') +
+      sec('連絡先',
+        ui.field('children', 'お子さまのお名前', { req: 1, value: f.children, err: e.children, ph: '山田 そうた', help: 'ご兄弟は「、」で区切ってください。' }) +
+        ui.field('name', '保護者のお名前', { req: 1, value: f.name, err: e.name, ac: 'name', ph: '山田 花子' }) +
+        ui.field('kana', 'フリガナ', { req: false, value: f.kana, ac: 'off', ph: 'ヤマダ ハナコ' }) +
+        ui.field('phone', '電話番号', { req: 1, value: f.phone, err: e.phone, type: 'tel', mode: 'tel', ac: 'tel', ph: '090-1234-5678', help: '入荷のことで、お店から連絡することがあります。' }) +
+        (b.inLine ? '<p class="help">受付の確認と、入荷のお知らせは、LINEでお送りします。</p>'
+          : ui.field('email', 'メールアドレス', { req: 1, value: f.email, err: e.email, type: 'email', mode: 'email', ac: 'email', ph: 'hanako@example.jp', help: '受付の確認と、ご予約の確認・取り消しのリンクをお送りします。' })) +
+        ui.field('note', 'お店への連絡', { req: false, textarea: 1, value: f.note, ph: '例：名前の刺しゅうを入れたい' })) +
+      ui.check('agree', 'お渡しは2月から（入荷のあと）・先着順でのご用意を確かめました。<a class="c-link" href="#/c/rules">プライバシーポリシー</a>', { value: f.agree, err: e.agree });
+    return page({ back: more, title: 'ご予約の確認', body: body, bar: '<div class="s">合計<br>' + yen(rsvTotal()) + '</div><button class="btn pri" data-act="cRsvPlace">この内容で予約する</button>' });
   }
 
   /* ================= C20 入荷のお知らせの登録 ================= */
@@ -600,8 +680,8 @@ KS.views.c = (function () {
 
   /* ================= C25 採寸：学校と日程の枠 ================= */
   function c25(r, p, b) {
-    if (!b.stages.measure) return soonPage('#/c', '採寸の予約');
-    var sid = r[0];
+    var sid = r[0], fit = !!sid && rsvOpen(b, sid);
+    if (!b.stages.measure && !fit) return soonPage('#/c', '採寸の予約');
     if (!sid) {
       return call('measureSchools').then(function (res) {
         if (!res.ok) return bad(res);
@@ -615,12 +695,15 @@ KS.views.c = (function () {
       if (!res.ok) return bad(res);
       var days = {}, order = [];
       res.slots.forEach(function (s) { if (!days[s.date]) { days[s.date] = []; order.push(s.date); } days[s.date].push(s); });
-      var body = '<div class="c-pagehd"><h1>' + esc(res.school.name) + '</h1><a class="c-link" href="#/c/measure">学校を変える</a></div>';
+      var ttl = res.fit ? '試着のご来店予約' : '採寸の予約', bk = res.fit ? '#/c/school/' + seg(res.school.id) : '#/c/measure';
+      var body = '<div class="c-pagehd"><h1>' + esc(res.school.name) + '</h1>' + (res.fit ? '' : '<a class="c-link" href="#/c/measure">学校を変える</a>') + '</div>';
       if (!res.slots.length || res.slots.every(function (s) { return s.left <= 0; })) {
         body += '<div class="notice">' + (res.slots.length ? 'いまご予約できる日程は、すべて埋まっています。' : 'いまご予約できる日程はありません。') + '日程が増えたらお知らせします。お急ぎの方はお電話でご相談ください。</div>' + telBtn();
-        return page({ back: '#/c/measure', title: '採寸の予約', body: body });
+        return page({ back: bk, title: ttl, body: body });
       }
-      body += '<p class="c-lead">ご都合の良い時間を選んでください。ご兄弟は、人数をまとめて1つの枠でご予約できます。</p>' +
+      body += (res.fit ? '<p class="c-lead">お店で体操服を試着して、サイズを決められます。試着の時間は30分です。ご都合の良い時間を選んでください。</p>' +
+          '<ul class="c-points"><li>試着のあと、そのままお店でご予約いただけます。</li><li>' + esc(res.handText) + '</li><li>ご兄弟は、人数をまとめて1つの枠でご予約できます。</li></ul>'
+        : '<p class="c-lead">ご都合の良い時間を選んでください。ご兄弟は、人数をまとめて1つの枠でご予約できます。</p>') +
         order.map(function (d) {
           return sec(u.jpDate(d), '<div class="c-mslots">' + days[d].map(function (s) {
             var full = s.left <= 0;
@@ -628,7 +711,7 @@ KS.views.c = (function () {
               u.hm(s.start) + '〜' + u.hm(s.end) + '<small>' + (full ? '満' : s.mark === '△' ? '残りわずか' : '空きあり') + '</small></button>';
           }).join('') + '</div>');
         }).join('') + '<p class="legend">満：その時間は埋まっています</p>';
-      return page({ back: '#/c/measure', title: '採寸の予約', body: body });
+      return page({ back: bk, title: ttl, body: body });
     });
   }
 
@@ -643,8 +726,8 @@ KS.views.c = (function () {
     return e;
   }
   function c26(r, p, b) {
-    if (!b.stages.measure) return soonPage('#/c', '採寸の予約');
-    var m = dr('measure');
+    var m = dr('measure'), fit = /^F/.test(String(m.slotId || '')) && rsvOpen(b, m.schoolId), ttl = fit ? '試着のご来店予約' : '採寸の予約';
+    if (!b.stages.measure && !fit) return soonPage('#/c', '採寸の予約');
     if (m.slotId !== r[0]) { KS.app.replace('#/c/measure'); return ui.loading(); }
     if (!m._filled && b.profile) { m.name = m.name || b.profile.name; m.phone = m.phone || b.profile.phone; }
     m._filled = 1; if (!m.count) m.count = '1'; saveDraft();
@@ -665,8 +748,8 @@ KS.views.c = (function () {
       ui.field('name', '保護者のお名前', { req: 1, value: m.name, err: e.name, ac: 'name', ph: '山田 花子' }) +
       ui.field('phone', '電話番号', { req: 1, value: m.phone, err: e.phone, type: 'tel', mode: 'tel', ac: 'tel', ph: '090-1234-5678' }) +
       (b.inLine ? '<p class="help">確認の連絡は、LINEでお送りします。</p>' : ui.field('email', 'メールアドレス', { req: 1, value: m.email, err: e.email, type: 'email', mode: 'email', ac: 'email', ph: 'hanako@example.jp', help: '確認と、取り消しのリンクをお送りします。' })) +
-      ui.field('note', 'ご要望', { req: false, textarea: 1, value: m.note, ph: '例：体操服も一緒に見たい' });
-    return page({ back: back, title: '採寸の予約', body: body2, bar: '<div class="s">' + esc(u.jpDate(m.date)) + '<br>' + u.hm(m.start) + '〜</div><button class="btn pri" data-act="cMeasureNext">確認へ' + ico('next') + '</button>' });
+      ui.field('note', 'ご要望', { req: false, textarea: 1, value: m.note, ph: fit ? '例：長そでと半ズボンを試したい' : '例：体操服も一緒に見たい' });
+    return page({ back: back, title: ttl, body: body2, bar: '<div class="s">' + esc(u.jpDate(m.date)) + '<br>' + u.hm(m.start) + '〜</div><button class="btn pri" data-act="cMeasureNext">確認へ' + ico('next') + '</button>' });
   }
 
   /* ================= C30 水素サロン：メニューと料金 ================= */
@@ -794,7 +877,7 @@ KS.views.c = (function () {
 
   /* ================= C40 わたしの予約 ================= */
   function c40(r, p, b) {
-    if (!b.stages.order && !b.stages.salon && !b.stages.measure) return soonPage('#/c', 'わたしの予約');
+    if (!b.stages.order && !b.stages.salon && !b.stages.measure && !b.stages.reserve) return soonPage('#/c', 'わたしの予約');
     return call('myList').then(function (res) {
       if (!res.ok && res.code === 'line') {
         return page({
@@ -806,13 +889,13 @@ KS.views.c = (function () {
       if (!res.ok) return bad(res);
       var row = function (href, t, sub, st) { return '<a class="c-item" href="' + href + '"><span class="n">' + t + '<small>' + sub + '</small></span><span class="r"><span class="mk">' + esc(st) + '</span>' + ico('next') + '</span></a>'; };
       var secs = [];
-      if (res.orders.length) secs.push(sec('体操服・制服の取り置き', '<div class="c-items">' + res.orders.map(function (o) {
+      if (res.orders.length) secs.push(sec('体操服・制服のご予約と取り置き', '<div class="c-items">' + res.orders.map(function (o) {
         var n = o.lines.length;
         return row('#/c/my/order/' + seg(o.token), esc(o.lines[0] ? o.lines[0].label : '') + (n > 1 ? ' ほか' + (n - 1) + '品' : ''),
-          esc(o.id) + '・' + (o.method === '配送' ? '配送' : 'お店で ' + esc(u.shortDate(o.pickupDate))), o.status);
+          esc(o.id) + '・' + (o.type === '予約' ? '予約（入荷のあとお渡し）' : o.method === '配送' ? '配送' : 'お店で ' + esc(u.shortDate(o.pickupDate))), o.status);
       }).join('') + '</div>'));
-      if (res.measure.length) secs.push(sec('採寸', '<div class="c-items">' + res.measure.map(function (m) {
-        return row('#/c/my/measure/' + seg(m.token), esc(m.school), esc(when(m.date, m.start)) + '・' + m.count + '人', m.status);
+      if (res.measure.length) secs.push(sec('試着・採寸', '<div class="c-items">' + res.measure.map(function (m) {
+        return row('#/c/my/measure/' + seg(m.token), esc(m.type === '試着' ? '試着 ' + m.school : m.school), esc(when(m.date, m.start)) + '・' + m.count + '人', m.status);
       }).join('') + '</div>'));
       if (res.salon.length) secs.push(sec('水素サロン', '<div class="c-items">' + res.salon.map(function (s) {
         return row('#/c/my/salon/' + seg(s.token), esc(s.menuName), esc(when(s.date, s.start, s.end)), s.status);
@@ -837,15 +920,15 @@ KS.views.c = (function () {
         body = kv([
           ['受付番号', esc(v.id)], ['状態', esc(v.status)],
           ['品物', v.lines.map(function (l) { return esc(l.label) + ' ×' + l.qty; }).join('<br>')],
-          ['受け取り', v.method === '配送' ? '配送：' + esc(v.ship ? v.ship.method : '') : 'お店で ' + esc(u.jpDate(v.pickupDate))],
-          v.method !== '配送' && v.status !== '取り消し' && v.status !== '受け取り済み' ? ['取り置きの期限', esc(u.jpDate(v.keepUntil)) + ' まで'] : null,
+          v.type === '予約' ? ['お渡し', esc(v.handText)] : ['受け取り', v.method === '配送' ? '配送：' + esc(v.ship ? v.ship.method : '') : 'お店で ' + esc(u.jpDate(v.pickupDate))],
+          v.type !== '予約' && v.method !== '配送' && v.status !== '取り消し' && v.status !== '受け取り済み' ? ['取り置きの期限', esc(u.jpDate(v.keepUntil)) + ' まで'] : null,
           ['合計', yen(v.total) + '（' + (v.pay === '事前' ? (v.payStatus === '支払い済み' ? 'お支払い済み' : 'ネットで先にお支払い') : '店頭でお支払い') + '）'],
           v.cancelReason ? ['取り消しの理由', esc(v.cancelReason)] : null
         ]);
         if (v.payUrl) acts += '<a class="btn pri block" href="' + esc(v.payUrl) + '">お支払いへ進む</a>';
         if (v.mustCall) acts += '<div class="notice">お店で用意が済んでいます。取り消し・日の変更はお電話でお願いします。</div>' + telBtn(null, true);
-        else if (v.canCancel) acts += cancelBtn('この取り置きを取り消す');
-        if (v.status === '受付' && v.method !== '配送') acts += '<p class="help">受け取りの日を変えたいときは、お電話でご連絡ください。</p>';
+        else if (v.canCancel) acts += cancelBtn(v.type === '予約' ? 'この予約を取り消す' : 'この取り置きを取り消す');
+        if (v.status === '受付' && v.method !== '配送' && v.type !== '予約') acts += '<p class="help">受け取りの日を変えたいときは、お電話でご連絡ください。</p>';
       } else if (kind === 'salon') {
         body = kv([['予約番号', esc(v.id)], ['状態', esc(v.status)], ['日時', esc(when(v.date, v.start, v.end))], ['メニュー', esc(v.menuName)], ['料金', yen(v.price) + '（店頭で）']]);
         if (v.canChange) acts += '<button class="btn pri block" data-act="cMoveStart" data-token="' + esc(token) + '" data-id="' + esc(v.id) + '" data-menu="' + esc(v.menuId) + '">' + ico('cal') + '日時を変える</button>' + cancelBtn('この予約を取り消す') +
@@ -854,7 +937,7 @@ KS.views.c = (function () {
         if (v.status === '来店済み' && res.voice) acts += res.voice.canWrite ? '<a class="btn pri block" href="#/c/voice/' + seg(token) + '">' + ico('star') + 'ご感想を送る</a>' : '<p class="help">ご感想をお送りいただき、ありがとうございました。</p>';
         if (v.status === '予約') acts += '<a class="btn block" href="' + esc(gcal('水素サロン（ココスポーツ）', v.date, v.start, v.end)) + '" target="_blank" rel="noopener">' + ico('cal') + 'カレンダーに入れる</a>';
       } else if (kind === 'measure') {
-        body = kv([['予約番号', esc(v.id)], ['状態', esc(v.status)], ['学校', esc(v.school)], ['日時', esc(when(v.date, v.start, v.end))], ['人数', v.count + '人'], ['お子さま', esc(v.children)]]);
+        body = kv([['予約番号', esc(v.id)], ['種類', v.type === '試着' ? '試着のご来店' : '採寸'], ['状態', esc(v.status)], ['学校', esc(v.school)], ['日時', esc(when(v.date, v.start, v.end))], ['人数', v.count + '人'], ['お子さま', esc(v.children)]]);
         if (v.canCancel) acts += cancelBtn('この予約を取り消す') + '<p class="help">日時を変えたいときは、取り消してから選び直してください。</p>';
       } else if (kind === 'wait') {
         var active = v.status === '待ち' || v.status === 'お知らせ済み';
@@ -905,7 +988,7 @@ KS.views.c = (function () {
   /* ================= 住所 → 画面 ================= */
   var ROUTES = {
     '': c00, line: function (r, p) { return c01(p.next || 'c'); }, school: function (r, p, b) { return r[0] ? c11(r, p, b) : c10(r, p, b); },
-    item: c12, cart: c13, checkout: c14, confirm: c15, pay: c16, done: c17, wait: c20, restock: c21,
+    item: c12, reserve: c18, cart: c13, checkout: c14, confirm: c15, pay: c16, done: c17, wait: c20, restock: c21,
     measure: c25, 'measure-form': c26, salon: function (r, p, b) { return r[0] ? c31(r, p, b) : c30(r, p, b); }, 'salon-form': c32, 'salon-confirm': c33,
     my: function (r, p, b) { return r[0] ? c41(r, p, b) : c40(r, p, b); }, voice: c50, rules: c60
   };
@@ -1088,7 +1171,7 @@ KS.views.c = (function () {
     },
     cMeasureBook: function () {
       var m = dr('measure'), f = {};
-      ['slotId', 'count', 'children', 'name', 'phone', 'email', 'note', 'agree'].forEach(function (k) { f[k] = m[k]; });
+      ['slotId', 'schoolId', 'count', 'children', 'name', 'phone', 'email', 'note', 'agree'].forEach(function (k) { f[k] = m[k]; });
       return call('measureBook', { form: f, utm: KS.app.utm() }).then(function (r) {
         if (r.ok) { D.measure = {}; errs.measure = {}; saveDraft(); return done('c/done/measure/' + seg(r.booking.token)); }
         if (r.code === 'input') {
@@ -1097,6 +1180,36 @@ KS.views.c = (function () {
           return;
         }
         if (r.code === 'slot') { setFlash('c/measure/' + m.schoolId, 'warn', r.message); m.slotId = ''; saveDraft(); return go('c/measure/' + seg(m.schoolId)); }
+        if (r.code === 'closed') { trouble = { hash: cur(), kind: 'closed', msg: r.message }; return; }
+        return actFail(r);
+      });
+    },
+    cJump: function (el) { var t = document.getElementById(el.dataset.to); if (t) t.scrollIntoView({ behavior: 'smooth' }); return false; },
+    /* C12 → C18 予約 */
+    cRsvAdd: function (el) {
+      var d = el.dataset, rv = rsv(), s = dr('sel'), qty = (s[d.pid] || {}).qty || 1;
+      if (rv.schoolId && rv.schoolId !== d.school && rv.lines.length && !ui.confirm('ほかの学校の品が予約に入っています。入れ替えますか？')) return false;
+      if (rv.schoolId !== d.school) { rv.lines = []; rv.schoolId = d.school; }
+      var same = rv.lines.filter(function (l) { return l.productId === d.pid && l.size === d.size; })[0];
+      if (same) same.qty = Math.min(9, same.qty + qty);
+      else rv.lines.push({ productId: d.pid, size: d.size, qty: qty, label: d.label, price: +d.price });
+      delete s[d.pid]; saveDraft(); ui.toast('予約に入れました');
+      return go('c/school/' + seg(d.school));
+    },
+    cRsvQty: function (el) {
+      var rv = rsv(), i = +el.dataset.i, l = rv.lines[i]; if (!l) return;
+      var q = Math.max(0, Math.min(9, l.qty + (+el.dataset.d)));
+      if (!q) { rv.lines.splice(i, 1); ui.toast('予約から外しました'); } else l.qty = q;
+      saveDraft();
+    },
+    cRsvPlace: function () {
+      var rv = rsv(), f0 = dr('rsvf'), f = { schoolId: rv.schoolId };
+      for (var k in f0) if (k.charAt(0) !== '_') f[k] = f0[k];
+      var e = checkRsv(f, B && B.inLine); errs.rsvf = e;
+      if (Object.keys(e).length) { ui.toast('入力を確かめてください'); return; }
+      return call('preorder', { lines: rv.lines.map(function (l) { return { productId: l.productId, size: l.size, qty: l.qty }; }), form: f, utm: KS.app.utm() }).then(function (r) {
+        if (r.ok) { D.rsv = { schoolId: rv.schoolId, lines: [] }; D.rsvf = { _filled: 1, name: f.name, kana: f.kana, phone: f.phone, email: f.email }; errs.rsvf = {}; saveDraft(); return done('c/done/order/' + seg(r.order.token)); }
+        if (r.code === 'input') { errs.rsvf = r.errors || {}; ui.toast(r.message); return; }
         if (r.code === 'closed') { trouble = { hash: cur(), kind: 'closed', msg: r.message }; return; }
         return actFail(r);
       });

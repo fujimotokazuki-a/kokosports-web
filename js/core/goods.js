@@ -36,7 +36,7 @@ KS.core.goods = (function () {
     if (me && me.schoolId !== s.id) ctx.db.update('customers', me.id, { schoolId: s.id });
     var items = ctx.db.all('products').filter(function (p) { return p.visible && (p.schoolId === s.id || (p.schoolId === '' && (!p.forKind || p.forKind === s.kind))); })
       .sort(u.by('sort')).map(function (p) { return summary(ctx, p); });
-    return { ok: true, school: s, items: items, measureOpen: !!c.cfg(ctx).stages.measure && s.measure, campaign: campaignFor(ctx, s.id), orderOpen: orderOpen(ctx) };
+    return { ok: true, school: s, items: items, measureOpen: !!c.cfg(ctx).stages.measure && s.measure, campaign: campaignFor(ctx, s.id), orderOpen: orderOpen(ctx), reserveOpen: reserveOpen(ctx, s.id) };
   }
   /* 体操服のお買い上げプレゼントの案内（設定 campaign）。有効で、その学校が対象のときだけ */
   function campaignFor(ctx, schoolId) {
@@ -68,7 +68,9 @@ KS.core.goods = (function () {
       return { size: z, label: c.sizeLabel(p, z), price: c.priceOf(p, z), state: open ? mark(ctx, freeQty(ctx, p.id, z, key)) : '', waiting: !!mine, waitStatus: mine ? mine.status : '' };
     });
     var pr = c.priceRange(p);
-    return { ok: true, product: p, school: p.schoolId ? c.school(ctx, p.schoolId) : null, sizes: sizes, priceMin: pr.min, priceMax: pr.max, priceFrom: pr.varies, orderOpen: open };
+    var rsid = p.schoolId || String(args.schoolId || '');
+    return { ok: true, product: p, school: p.schoolId ? c.school(ctx, p.schoolId) : null, sizes: sizes, priceMin: pr.min, priceMax: pr.max, priceFrom: pr.varies, orderOpen: open,
+      reserveOpen: reserveOpen(ctx, rsid) && reservable(ctx, p, rsid), reserveSchoolId: rsid };
   }
 
   /* --- C13 かご（30分だけ在庫を押さえる） --- */
@@ -144,6 +146,53 @@ KS.core.goods = (function () {
     if (!m) return null;
     if (count > m.maxItems) return { error: 'この送り方は' + m.maxItems + '点までです。' };
     return { method: m, fee: m.fee };
+  }
+
+  /* --- 予約（すぐ予約）：在庫を押さえず、入荷のあと先着順にお渡し。開けた学校の品だけ --- */
+  function reserveOpen(ctx, schoolId) {
+    var cf = c.cfg(ctx);
+    return !!(cf.stages.reserve && cf.reserve && (cf.reserve.schoolIds || []).indexOf(schoolId) >= 0);
+  }
+  /* その学校の予約で選べる品か（学校の品か、小学校共通の品。価格が決まっていて、採寸の要らないもの） */
+  function reservable(ctx, p, schoolId) {
+    var s = c.school(ctx, schoolId);
+    if (!p || !p.visible || !s || p.needsMeasure || p.priceTentative) return false;
+    return p.schoolId === s.id || (p.schoolId === '' && (!p.forKind || p.forKind === s.kind));
+  }
+  function preorder(ctx, args) {
+    var cf = c.cfg(ctx), f = args.form || {}, me = c.meLine(ctx), now = ctx.now(), sid = String(f.schoolId || '');
+    if (!reserveOpen(ctx, sid)) return u.fail('この学校のご予約は、まだ始まっていません。', 'closed');
+    var want = (args.lines || []).slice(0, 30), lines = [], bad = [];
+    want.forEach(function (l) {
+      var p = c.product(ctx, l.productId), q = Math.max(1, Math.min(9, +l.qty || 1));
+      if (!reservable(ctx, p, sid) || p.sizes.indexOf(l.size) < 0) { bad.push(p ? p.name : '（品物）'); return; }
+      lines.push({ productId: p.id, size: l.size, qty: q, price: c.priceOf(p, l.size), name: p.name, label: c.productLabel(ctx, p.id, l.size), waitId: '' });
+    });
+    if (bad.length) return u.fail('ご予約できない品があります：' + bad.join('、') + '。選び直してください。', 'lines');
+    if (!lines.length) return u.fail('品物を選んでください。', 'empty');
+    var e = {};
+    if (!String(f.children || '').trim()) e.children = 'お子さまのお名前を入力してください。';
+    if (!String(f.name || '').trim()) e.name = '保護者のお名前を入力してください。';
+    if (!u.okPhone(f.phone)) e.phone = '電話番号をご確認ください（10〜11桁）。';
+    if (!me && !u.okEmail(f.email)) e.email = 'メールアドレスをご確認ください。確認のお知らせをお送りします。';
+    if (!f.agree) e.agree = 'お渡しの時期と先着順を確かめて、チェックを入れてください。';
+    if (Object.keys(e).length) return u.fail('入力を確かめてください。', 'input', { errors: e });
+    var cust = c.resolveCustomer(ctx, { name: f.name, kana: f.kana, phone: f.phone, email: f.email, schoolId: sid, heardFrom: f.heardFrom }, me ? 'LINE' : (args.utm && args.utm.source) || 'Web');
+    var goods = u.sum(lines, function (l) { return l.price * l.qty; });
+    var o = {
+      id: ctx.db.nextId('T'), token: u.token(), customerId: cust.id, lines: lines, method: '店頭', pickupDate: '', ship: null, pay: '店頭',
+      payStatus: '店頭で', payRef: '', payUrl: '', payDeadline: 0, status: '受付', goods: goods, shipFee: 0, total: goods, type: '予約', schoolId: sid,
+      children: String(f.children).trim(), contact: { name: String(f.name).trim(), phone: u.normPhone(f.phone), email: u.normEmail(f.email || '') },
+      channel: me ? 'LINE' : 'Web', utm: args.utm || null, note: String(f.note || ''), createdAt: u.stamp(now.ts), createdDate: now.date,
+      remindedDayBefore: false, noShowNotified: false, cancelReason: '', doneAt: '', legalVersion: cf.legal.version
+    };
+    ctx.db.insert('orders', o);
+    c.audit(ctx, '予約を受付', o.id + '（' + lines.length + '品・' + (c.school(ctx, sid) || {}).short + '）');
+    N.send(ctx, cust, {
+      kind: '受付', template: 'preorder_received', refId: o.id, mode: 'reply', subject: '体操服のご予約を受け付けました',
+      vars: { 番号: o.id, 品物: linesText(o), 合計: u.yen(goods), お渡し: cf.reserve.handText, リンク: c.link(ctx, 'my/order/' + o.token) }
+    });
+    return { ok: true, order: view(ctx, ctx.db.get('orders', o.id)) };
   }
 
   /* --- C15 最後の確認 → 注文（取り置き）を作る --- */
@@ -239,6 +288,7 @@ KS.core.goods = (function () {
 
   /* 在庫を戻す（取り消し・期限切れ） */
   function restore(ctx, o, why) {
+    if (o.type === '予約') return;   /* 予約は在庫を押さえていない */
     var now = ctx.now();
     o.lines.forEach(function (l) {
       var sid = stockId(l.productId, l.size), st = ctx.db.get('stock', sid);
@@ -300,7 +350,7 @@ KS.core.goods = (function () {
     return {
       id: o.id, token: o.token, kind: 'order', lines: o.lines, method: o.method, pickupDate: o.pickupDate, ship: o.ship, pay: o.pay, payStatus: o.payStatus,
       payUrl: o.payStatus === '支払い待ち' ? o.payUrl : '', payDeadline: o.payDeadline, status: o.status, goods: o.goods, shipFee: o.shipFee, total: o.total,
-      createdAt: o.createdAt, cancelReason: o.cancelReason, keepUntil: keepUntil(ctx, o),
+      createdAt: o.createdAt, cancelReason: o.cancelReason, keepUntil: keepUntil(ctx, o), type: o.type || '', handText: o.type === '予約' ? c.cfg(ctx).reserve.handText : '',
       canCancel: o.status === '受付' || o.status === '支払い待ち', mustCall: o.status === '用意済み', contact: o.contact
     };
   }
@@ -406,6 +456,6 @@ KS.core.goods = (function () {
     cart: cart, cartAdd: cartAdd, cartSet: cartSet, checkoutInfo: checkoutInfo, pickupDays: pickupDays, placeOrder: placeOrder, orderDone: orderDone,
     devPay: devPay, checkPayment: checkPayment, expireUnpaid: expireUnpaid, view: view, waitAdd: waitAdd, waitView: waitView, waitCancel: waitCancel,
     restockOpen: restockOpen, waitingFor: waitingFor, notifyWaiters: notifyWaiters, releasePriority: releasePriority, findOwned: findOwned,
-    orderCancel: orderCancel, restore: restore, keepUntil: keepUntil, cancelPayLink: cancelPayLink, linesText: linesText, receiveText: receiveText, sendReceived: sendReceived
+    orderCancel: orderCancel, restore: restore, preorder: preorder, reserveOpen: reserveOpen, reservable: reservable, keepUntil: keepUntil, cancelPayLink: cancelPayLink, linesText: linesText, receiveText: receiveText, sendReceived: sendReceived
   };
 })();

@@ -83,7 +83,7 @@ KS.views.s = (function () {
   function seatNames(ids) { return (ids || []).map(function (s) { return s === 'S1' ? '1' : s === 'S2' ? '2' : s; }).join('・'); }
   function tm(b) { return u.hm(b.start) + '〜' + u.hm(b.end); }
   function linesTxt(o) { return (o.lines || []).map(function (l) { return esc(l.label) + ' ×' + l.qty; }).join('、'); }
-  function recvTxt(o) { return o.method === '配送' ? '配送' + (o.ship ? '・' + esc(o.ship.method) : '') : '店頭 ' + (o.pickupDate ? u.shortDate(o.pickupDate) : ''); }
+  function recvTxt(o) { return o.type === '予約' ? '予約（入荷のあと）' : o.method === '配送' ? '配送' + (o.ship ? '・' + esc(o.ship.method) : '') : '店頭 ' + (o.pickupDate ? u.shortDate(o.pickupDate) : ''); }
   function payTxt(o) { return o.pay === '事前' ? 'ネットで先払い・' + esc(o.payStatus) : '店頭で会計'; }
   function mlabel(m) { return +m.slice(0, 4) + '年' + (+m.slice(5, 7)) + '月'; }
   function addMonth(m, n) { var y = +m.slice(0, 4), mm = +m.slice(5, 7) + n; while (mm < 1) { mm += 12; y--; } while (mm > 12) { mm -= 12; y++; } return y + '-' + u.pad(mm); }
@@ -132,8 +132,8 @@ KS.views.s = (function () {
       }).join('') || empty('この日のサロンの予約はありません');
       var meas = r.measure.map(function (b) {
         var act = b.status === '予約' ? btn('来店済み', 'sMeas', { id: b.id, s: '来店済み' }) : '<span class="st">' + esc(b.status) + '</span>';
-        return row('<span class="tm">' + tm(b) + '</span>' + clink(b.customer), esc(b.school) + '・' + b.count + '人（' + esc(b.children) + '）', act);
-      }).join('') || empty('この日の採寸はありません');
+        return row('<span class="tm">' + tm(b) + '</span>' + clink(b.customer), (b.type === '試着' ? '試着・' : '') + esc(b.school) + '・' + b.count + '人（' + esc(b.children) + '）', act);
+      }).join('') || empty('この日の試着・採寸はありません');
       var ship = r.ship.map(function (o) { return row(ordMain(o), linesTxt(o) + '<br>' + recvTxt(o) + '・支払い済み', ordAct(o)); }).join('') || empty('発送を待っている注文はありません');
       var fresh = r.fresh.map(function (o) { return row(ordMain(o, '<span class="t2s">' + recvTxt(o) + '</span>'), linesTxt(o), ordAct(o)); }).join('') || empty('新しい取り置きはありません');
       var near = r.nearing.map(function (o) {
@@ -352,6 +352,7 @@ KS.views.s = (function () {
       var lines = '<table class="t mini"><tr><th>品物</th><th class="n">数</th><th class="n">金額</th></tr>' + o.lines.map(function (l) { return '<tr><td>' + esc(l.label) + '</td><td class="n">' + l.qty + '</td><td class="n">' + u.yen(l.price * l.qty) + '</td></tr>'; }).join('') +
         (o.shipFee ? '<tr><td>送料</td><td></td><td class="n">' + u.yen(o.shipFee) + '</td></tr>' : '') + '<tr><td>合計</td><td></td><td class="n">' + u.yen(o.total) + '</td></tr></table>';
       var recv = o.method === '配送' ? '配送（' + esc(o.ship.method) + '）<div class="t2s">〒' + esc(o.ship.zip) + ' ' + esc(o.ship.addr) + '　' + esc(o.ship.to) + ' 様' + (o.ship.tracking ? '<br>問い合わせ番号 ' + esc(o.ship.tracking) : '') + '</div>'
+        : o.type === '予約' ? '予約（入荷のあと、先着順にお渡し）<div class="t2s">そろったら「用意済み」を押すと、お客様に知らせます</div>'
         : '店頭・' + (o.pickupDate ? u.jpDate(o.pickupDate) : '') + (o.keepUntil && (o.status === '受付' || o.status === '用意済み') ? '<div class="t2s">' + u.shortDate(o.keepUntil) + ' までに来なければ取り消し</div>' : '');
       var info = '<table class="sumtable">' +
         '<tr><td>状態</td><td>' + esc(o.status) + (o.cancelReason ? '<div class="t2s">' + esc(o.cancelReason) + '</div>' : '') + '</td></tr>' +
@@ -558,12 +559,12 @@ KS.views.s = (function () {
 
   var SHOP_F = [['name', '店の名前'], ['address', '住所'], ['tel', '電話'], ['hours', '営業時間（お客様に見せる書き方）'], ['closedText', '定休日（書き方）'], ['instagram', 'Instagram のリンク'], ['map', '地図のリンク'], ['lineAddUrl', '公式LINEの友だち追加のリンク'], ['airReserve', 'Airリザーブのリンク（サロンを切り替えるまで）'], ['googleReviewUrl', 'Googleの口コミの住所（ご感想のあとに案内する）'], ['owner', '運営責任者'], ['manager', '店長']];
   var TPL = [['order_received', '取り置きの受付'], ['order_paid', '支払いの確認'], ['order_dayBefore', '取り置きの前日'], ['order_noShow', '受け取り日を過ぎたとき'], ['order_cancelled', '取り置きの取り消し'], ['order_shipped', '発送'], ['restock', '入荷'],
-    ['measure_received', '採寸の受付'], ['measure_dayBefore', '採寸の前日'], ['salon_received', 'サロンの受付'], ['salon_changed', 'サロンの日時の変更'], ['salon_cancelled', 'サロンの取り消し'], ['salon_dayBefore', 'サロンの前日']];
+    ['preorder_received', '予約の受付'], ['preorder_ready', '予約の品の用意ができた'], ['fit_received', '試着の受付'], ['fit_dayBefore', '試着の前日'], ['measure_received', '採寸の受付'], ['measure_dayBefore', '採寸の前日'], ['salon_received', 'サロンの受付'], ['salon_changed', 'サロンの日時の変更'], ['salon_cancelled', 'サロンの取り消し'], ['salon_dayBefore', 'サロンの前日']];
   var NUMS = [['pickup', 'fromDays', '受け取り日：何日後から選べるか', '日'], ['pickup', 'toDays', '受け取り日：何日後まで選べるか', '日'], ['pickup', 'keepDays', '受け取り日を過ぎて取り消すまで', '日'],
     ['cart', 'holdMin', 'かごに入れた品を押さえる時間', '分'], ['cart', 'lowStock', '「残りわずか」と見せる数', '個以下'], ['restock', 'priorityHours', '入荷のお知らせのあと優先する時間', '時間'],
     ['payment', 'deadlineMin', 'ネットの支払いを待つ時間', '分'], ['salon', 'deadlineMin', 'サロン：ネットの受付の締め切り', '分前'], ['salon', 'cancelMin', 'サロン：ネットで取り消せるのは', '分前まで'],
     ['salon', 'horizonDays', 'サロン：何日先まで受け付けるか', '日'], ['line', 'monthlyQuota', 'LINEの月の無料通数', '通'], ['line', 'stopReminderUnder', '前日のお知らせを止める残り', '通を切ったら']];
-  var STAGES = [['price', '体操服の料金表（取り置きを始める前でも見せる）'], ['order', '体操服などの取り置き（在庫の表示・かご・入荷のお知らせ）'], ['measure', '採寸の予約'], ['ship', '配送'], ['prepay', 'ネットで先に払う'], ['salon', '水素サロンの予約'], ['voice', 'お客様の声（来店のあとに聞く）']];
+  var STAGES = [['price', '体操服の料金表（取り置きを始める前でも見せる）'], ['reserve', '体操服の予約（すぐ予約・来店して試着。開ける学校は設定の reserve）'], ['order', '体操服などの取り置き（在庫の表示・かご・入荷のお知らせ）'], ['measure', '採寸の予約'], ['ship', '配送'], ['prepay', 'ネットで先に払う'], ['salon', '水素サロンの予約'], ['voice', 'お客様の声（来店のあとに聞く）']];
   var WD = ['日', '月', '火', '水', '木', '金', '土'];
   var ROLE = { owner: 'オーナー', admin: '管理（本人）', staff: '店の人' };
 
