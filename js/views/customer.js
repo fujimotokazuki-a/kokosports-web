@@ -23,8 +23,71 @@ KS.views.c = (function () {
   function saveDraft() { try { sessionStorage.setItem('ks_c_draft', JSON.stringify(D)); } catch (e) { } }
   function dr(k) { return D[k] || (D[k] = {}); }
   function call(name, args) {
-    return KS.api.call(name, args || {}).then(function (r) { return r || { ok: false, code: 'error' }; }, function () { return { ok: false, code: 'network' }; });
+    return KS.api.call(name, args || {}).then(function (r) {
+      r = r || { ok: false, code: 'error' };
+      if (r.ok && !READS[name]) fastClear();   /* 申し込み・取り消しのあとは、覚えた空きや在庫を使わない */
+      return r;
+    }, function () { return { ok: false, code: 'network' }; });
   }
+  var READS = { boot: 1, schools: 1, schoolItems: 1, item: 1, measureSchools: 1, measureSlots: 1, cart: 1, detail: 1, myList: 1, salonMenus: 1, salonWeek: 1, salonForm: 1, checkoutInfo: 1, orderDone: 1 };
+  /* だれが見ても同じ中身（料金表・学校・試着の空きなど）は、この端末に覚えておき、次からはすぐ出す。
+     裏では新しい中身を取りに行き、違っていれば同じ画面にいるあいだに描き直す（入力中は描き直さない）。
+     1分以内に取った中身はそのまま使う。同じ呼び出しが重なったら1回にまとめる。起動の中のお客様の情報は覚えない */
+  var sentSchool = '';
+  var FAST_FRESH = 60000, FAST_KEEP = 14 * 86400000, flying = {};
+  /* LINEの人ごとに分けて覚える（入荷待ちの状態・前に選んだ学校など、その人だけの中身が混じるため） */
+  function fastKey(name, args) { var pf = KS.line.profile(); return 'fast:' + ((pf && pf.userId) || '-') + ':' + name + ':' + JSON.stringify(args || {}); }
+  function fastStrip(name, r) {
+    if (name !== 'boot') return r;
+    var x = {}; for (var k in r) if (k !== 'profile' && k !== 'now') x[k] = r[k];
+    return x;
+  }
+  var fastGen = 0;   /* 申し込み・取り消しのたびに進める。それより前に出した読み込みの答えは覚えない */
+  function fastClear() {
+    fastGen++;
+    var ks = [];
+    try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (/^ks_fast:[^:]*:(measureSlots|schoolItems|item):/.test(k)) ks.push(k.slice(3)); } } catch (e) { }
+    ks.forEach(function (k) { ui.keep(k, null); });
+  }
+  /* 覚えた中身は写しを渡す（覚えた物そのものを書き換えないように） */
+  function keptCopy(r) { var x = JSON.parse(JSON.stringify(r)); x._kept = true; return x; }
+  function typing() { var a = document.activeElement; return !!a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName); }
+  /* always：1分以内でも裏へ取りに行く（裏側で記録が残る呼び出し。例：選んだ学校を覚える schoolItems） */
+  function fast(name, args, onFresh, always) {
+    if (KS.config.backend !== 'gas') return call(name, args);
+    var key = fastKey(name, args), hit = ui.keep(key);
+    if (hit && !(hit.at > Date.now() - FAST_KEEP)) hit = null;
+    if (hit && hit.at > Date.now() - FAST_FRESH && !flying[key] && !always) return Promise.resolve(keptCopy(hit.r));
+    var fresh = flying[key];
+    if (!fresh) {
+      var hash = cur(), shown = hit ? JSON.stringify(hit.r) : '', gen = fastGen;
+      fresh = flying[key] = call(name, args).then(function (r) {
+        delete flying[key];
+        if (r && r.ok && gen === fastGen) {
+          var kept = fastStrip(name, r);
+          ui.keep(key, { at: Date.now(), r: kept });
+          if (onFresh) onFresh(r);
+          /* 先に覚えた中身を出していて、新しい中身が違えば描き直す */
+          if (shown && JSON.stringify(kept) !== shown && cur() === hash && !typing()) KS.app.render();
+        }
+        return r;
+      });
+    }
+    if (!hit) return fresh;
+    return Promise.resolve(keptCopy(hit.r));
+  }
+  /* 住所から、その画面が呼ぶものを起動と同時に呼んでおく */
+  function prefetch(rest) {
+    if (KS.config.backend !== 'gas') return;
+    var k = rest[0] || '', id = rest[1];
+    if (k === 'school' && !id) { fast('schools'); var ls = ui.keep('school'); if (ls) fast('schoolItems', { schoolId: ls }); }
+    else if (k === 'school') fast('schoolItems', { schoolId: id });
+    else if (k === 'item' && id) fast('item', { productId: id, cartId: cartId(), schoolId: lastSchool() });
+    else if (k === 'measure' && id) fast('measureSlots', { schoolId: id });
+    else if (k === 'measure') fast('measureSchools');
+  }
+  /* かごは取り置きを始めてから使う。始める前は呼ばない */
+  function cartOf(b) { return b.stages.order ? call('cart', { cartId: cartId() }) : Promise.resolve({ ok: true, count: 0, goods: 0, lines: [] }); }
   function cartId() { return ui.cartId(); }
   function cur() { var h = location.hash.split('?')[0]; try { return decodeURIComponent(h); } catch (e) { return h; } }
   function seg(x) { return encodeURIComponent(x); }
@@ -194,9 +257,9 @@ KS.views.c = (function () {
   /* ================= C10 学校を選ぶ ================= */
   function c10(r, p, b) {
     if (!goodsShown(b)) return soonPage('#/c', '体操服・制服');
-    return call('schools').then(function (res) {
+    return fast('schools').then(function (res) {
       if (!res.ok) return bad(res);
-      var last = res.lastSchoolId || ui.keep('school') || '';
+      var last = ui.keep('school') || res.lastSchoolId || '';   /* この端末で最後に選んだ学校を先に（覚えた一覧の lastSchoolId は古いことがある） */
       var known = res.schools.filter(function (s) { return s.id === last; })[0];
       if (known && p.pick !== '1') { KS.app.replace('#/c/school/' + seg(last)); return ui.loading(); }
       var row = function (s) { return '<a href="#/c/school/' + seg(s.id) + '">' + esc(s.name) + '<span>' + (s.kind === '中' ? '制服・体操服' : '体操服') + ico('next') + '</span></a>'; };
@@ -216,7 +279,8 @@ KS.views.c = (function () {
     if (!goodsShown(b)) return soonPage('#/c', '体操服・制服');
     var po = priceOnly(b);
     var sid = r[0], ro = rsvOpen(b, sid) && !b.stages.order;   /* 予約は取り置き（在庫を見て買う）を始める前の形。始めたら通常の取り置きに戻る */
-    return Promise.all([call('schoolItems', { schoolId: sid }), call('cart', { cartId: cartId() })]).then(function (x) {
+    var pick = sentSchool !== sid; sentSchool = sid;   /* 学校を選び直したときは、裏側にも必ず届ける（その人の学校として覚える） */
+    return Promise.all([fast('schoolItems', { schoolId: sid }, null, pick), cartOf(b)]).then(function (x) {
       var res = x[0], cr = x[1];
       if (!res.ok) return bad(res);
       ui.keep('school', sid);
@@ -268,7 +332,7 @@ KS.views.c = (function () {
   function c12(r, p, b) {
     if (!goodsShown(b)) return soonPage('#/c', '体操服・制服');
     var pid = r[0];
-    return Promise.all([call('item', { productId: pid, cartId: cartId(), schoolId: lastSchool() }), call('cart', { cartId: cartId() })]).then(function (x) {
+    return Promise.all([fast('item', { productId: pid, cartId: cartId(), schoolId: lastSchool() }), cartOf(b)]).then(function (x) {
       var res = x[0], cr = x[1];
       if (!res.ok) return bad(res);
       var pr = res.product, sc = res.school, sel = dr('sel')[pid] || {};
@@ -683,7 +747,7 @@ KS.views.c = (function () {
     var sid = r[0], fit = !!sid && rsvOpen(b, sid);
     if (!b.stages.measure && !fit) return soonPage('#/c', '採寸の予約');
     if (!sid) {
-      return call('measureSchools').then(function (res) {
+      return fast('measureSchools').then(function (res) {
         if (!res.ok) return bad(res);
         if (!res.open) return closedPage('#/c', '採寸の予約', '採寸のご予約は準備中です。お電話でお問い合わせください。');
         var body = '<p class="c-lead">中学校の制服は、採寸してからご用意します。学校を選ぶと、採寸の日程が見られます。</p><div class="schools">' +
@@ -691,7 +755,7 @@ KS.views.c = (function () {
         return page({ back: '#/c', title: '採寸の予約', body: body });
       });
     }
-    return call('measureSlots', { schoolId: sid }).then(function (res) {
+    return fast('measureSlots', { schoolId: sid }).then(function (res) {
       if (!res.ok) return bad(res);
       var days = {}, order = [];
       res.slots.forEach(function (s) { if (!days[s.date]) { days[s.date] = []; order.push(s.date); } days[s.date].push(s); });
@@ -1017,16 +1081,31 @@ KS.views.c = (function () {
   /* LINEの外の人に一度だけ C01 を出す入口 */
   var GUIDE = { school: 'order', item: 'order', salon: 'salon', measure: 'measure' };
 
+  /* 起動：覚えた中身があればすぐ出し、裏で新しくする（お客様の情報は新しい中身が届いてから入る） */
   function boot() {
-    var cache = KS.config.backend === 'gas';
-    if (cache && B && Date.now() - bootAt < 300000) return Promise.resolve(B);
-    return call('boot').then(function (r) { if (r.ok) { B = r; bootAt = Date.now(); } return r; });
+    var gas = KS.config.backend === 'gas';
+    if (gas && B && !B._kept && Date.now() - bootAt < 300000) return Promise.resolve(B);
+    return fast('boot', null, function (r) {
+      var was = B && B._kept;
+      B = r; bootAt = Date.now();
+      /* 覚えた中身で出していた画面に、お客様の情報（入力欄の名前・電話など）を入れ直す */
+      if (was && r.profile && !typing()) KS.app.render();
+    }).then(function (r) {
+      if (!r.ok) return r;
+      if (r._kept) {
+        if (B && !B._kept) return B;   /* 新しい中身がもう届いている */
+        r.inLine = KS.line.inClient() && !!KS.line.idToken(); r.profile = null;
+      } else bootAt = Date.now();
+      B = r;
+      return r;
+    });
   }
   function route(rest, params) {
     var h = cur();
     if (trouble && trouble.hash !== h) trouble = null;
     if (flash && flash.hash !== h) flash = null;
     nextFormKey = ''; nextReceive = '';
+    prefetch(rest);
     return boot().then(function (b) {
       if (!b.ok) return c90('net');
       if (trouble) return c90(trouble.kind, trouble);
