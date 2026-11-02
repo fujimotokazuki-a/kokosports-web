@@ -31,7 +31,12 @@ KS.line = (function () {
     if (KS.config.backend !== 'gas' || !KS.config.liffId) { ready = true; return Promise.resolve(); }
     return loadSdk().then(function () { return liff.init({ liffId: KS.config.liffId }); }).then(function () {
       inClient = liff.isInClient();
-      if (liff.isLoggedIn()) { token = liff.getIDToken() || ''; return liff.getProfile().then(function (p) { profile = p; }).catch(function () {}); }
+      /* だれかは IDトークンの中から取る（getProfile の通信を待たずに画面を出す） */
+      if (liff.isLoggedIn()) {
+        token = liff.getIDToken() || '';
+        var d = null; try { d = liff.getDecodedIDToken(); } catch (e) { d = null; }
+        if (d && d.sub) profile = { userId: d.sub, displayName: d.name || '' };
+      }
     }).catch(function () { /* LINEにつながらなくても、LINEの外の人として続ける */ }).then(function () { ready = true; });
   }
   /* LINEで開き直す（C01 の「LINEで続ける」） */

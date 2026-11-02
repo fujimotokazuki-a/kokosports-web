@@ -2119,7 +2119,12 @@ KS.line = (function () {
     if (KS.config.backend !== 'gas' || !KS.config.liffId) { ready = true; return Promise.resolve(); }
     return loadSdk().then(function () { return liff.init({ liffId: KS.config.liffId }); }).then(function () {
       inClient = liff.isInClient();
-      if (liff.isLoggedIn()) { token = liff.getIDToken() || ''; return liff.getProfile().then(function (p) { profile = p; }).catch(function () {}); }
+      /* だれかは IDトークンの中から取る（getProfile の通信を待たずに画面を出す） */
+      if (liff.isLoggedIn()) {
+        token = liff.getIDToken() || '';
+        var d = null; try { d = liff.getDecodedIDToken(); } catch (e) { d = null; }
+        if (d && d.sub) profile = { userId: d.sub, displayName: d.name || '' };
+      }
     }).catch(function () { /* LINEにつながらなくても、LINEの外の人として続ける */ }).then(function () { ready = true; });
   }
   /* LINEで開き直す（C01 の「LINEで続ける」） */
@@ -2568,6 +2573,7 @@ KS.views.c = (function () {
             (opt.length ? sec('あると便利', '<div class="c-items">' + opt.map(item).join('') + '</div>') : '') +
             '<p class="help">価格は税込みです。「〜」はサイズによって価格が変わる品です。' + (ro ? '品物を押して、サイズを選ぶと予約に入れられます。「価格は近日掲載」の品は、価格が決まってからご予約できます。' : po ? '品物を押すと、サイズごとの価格が見られます。' : '「残りわずか」「品切れ」はネットと店頭を合わせた在庫です。') + '</p>'
           : '<div class="notice">この学校の品物は準備中です。お電話でお問い合わせください。</div>' + telBtn() + '<a class="btn block" href="#/c/school?pick=1">扱っている学校を見る</a>');
+      if (ro) fast('measureSlots', { schoolId: sid });   /* 「来店して試着」を押したときにすぐ出せるよう、先に読んでおく */
       var bar = ro ? rsvBar() : po ? soonBar(b) : cr.ok && cr.count ? '<div class="s">かごに ' + cr.count + '点<br>' + yen(cr.goods) + '</div><a class="btn pri" href="#/c/cart">' + ico('bag') + 'かごを見る</a>' : '';
       return page({ back: '#/c/school?pick=1', title: s.short, body: body, bar: bar });
     });
